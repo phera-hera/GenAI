@@ -1,0 +1,25 @@
+# =============================================================================
+# Terraform Variables Example
+# =============================================================================
+# Copy this file to terraform.tfvars and fill in your values
+# Never commit terraform.tfvars to version control!
+# =============================================================================
+
+# Required: Your GCP Project ID
+project_id = "your-gcp-project-id"
+
+# Optional: GCP Region (default: us-central1)
+region = "us-central1"
+
+# Optional: Environment (default: development)
+environment = "development"
+
+# Optional: Cloud SQL instance tier
+# Development: db-f1-micro (shared CPU, 0.6 GB RAM)
+# Production: db-custom-2-4096 (2 vCPU, 4 GB RAM) or larger
+db_tier = "db-f1-micro"
+
+# Required: Database password
+# Use a strong password with at least 16 characters
+db_password = "your-secure-database-password"
+
