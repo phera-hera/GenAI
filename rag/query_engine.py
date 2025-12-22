@@ -1,5 +1,5 @@
 """
-Query Engine for Medical RAG
+Query Engine for  the entire medical knowledge base Medical RAG
 
 Provides a high-level query interface that combines:
 - Semantic retrieval from medical papers
