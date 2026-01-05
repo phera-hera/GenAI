@@ -2,7 +2,7 @@
 Ingestion Pipeline Orchestrator
 
 Provides the complete pipeline for processing medical research papers:
-1. Parse PDF using Azure Document Intelligence
+1. Parse PDF using LlamaParser
 2. Chunk into semantic sections
 3. Generate embeddings using Azure OpenAI
 4. Store in pgvector for retrieval

@@ -1,8 +1,8 @@
 """
 Fallback PDF Parser using PyMuPDF
 
-Provides a lightweight fallback PDF parser for when Azure Document
-Intelligence is unavailable. Uses PyMuPDF (fitz) for basic text
+Provides a lightweight fallback PDF parser for when LlamaParser
+is unavailable. Uses PyMuPDF (fitz) for basic text
 and table extraction.
 """
 
@@ -68,7 +68,7 @@ class FallbackPDFParser:
     Fallback PDF parser using PyMuPDF.
     
     This parser provides basic PDF extraction capabilities when
-    Azure Document Intelligence is not available. It's less
+    LlamaParser is not available. It's less
     accurate but works offline and has no API costs.
     
     Note: Requires pymupdf package to be installed.
@@ -223,7 +223,7 @@ class FallbackPDFParser:
         Extract tables from PDF using PyMuPDF.
         
         Note: PyMuPDF's table extraction is basic compared to
-        Azure Document Intelligence. Complex tables may not
+        LlamaParser. Complex tables may not
         be properly extracted.
         
         Args:

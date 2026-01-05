@@ -23,9 +23,11 @@ dependencies = [
     
     # Azure Services
     "openai>=1.12.0",
-    "azure-ai-formrecognizer>=3.3.2",
     "azure-identity>=1.15.0",
     "azure-storage-blob>=12.19.0",
+    
+    # LlamaCloud LlamaParser
+    "llama-parse>=0.4.0",
     
     # GCP Services
     "google-cloud-storage>=2.14.0",

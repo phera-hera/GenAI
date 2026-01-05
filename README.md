@@ -31,7 +31,7 @@ This platform takes pH values from test strip photos (provided by a separate CV 
 | Backend | FastAPI |
 | LLM | Azure OpenAI (GPT-4o) |
 | Embeddings | Azure OpenAI (text-embedding-3-small) |
-| Document Parsing | Azure Document Intelligence |
+| Document Parsing | LlamaParser (LlamaCloud) |
 | Vector DB | pgvector (PostgreSQL) |
 | Agent Framework | LangGraph |
 | RAG Framework | LlamaIndex |
@@ -216,7 +216,7 @@ See `.env.example` for all available configuration options. Key variables:
 | `DATABASE_URL` | PostgreSQL connection string |
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI API key |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL |
-| `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` | Document parsing endpoint |
+| `LLAMA_CLOUD_API_KEY` | LlamaCloud API key for PDF parsing |
 | `GCP_PROJECT_ID` | GCP project for Cloud Storage |
 | `GCP_BUCKET_NAME` | Cloud Storage bucket name |
 | `LANGFUSE_PUBLIC_KEY` | Langfuse observability key |

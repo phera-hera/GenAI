@@ -13,7 +13,7 @@ This document explains the technologies used in the FemTech Medical RAG Agent, w
 | API Framework | FastAPI | Handles web requests |
 | LLM | Azure OpenAI (GPT-4o) | Powers medical reasoning |
 | Embeddings | text-embedding-3-small | Converts text to searchable vectors |
-| Document Parsing | Azure Document Intelligence | Extracts text from PDFs |
+| Document Parsing | LlamaParser (LlamaCloud) | Extracts text from PDFs |
 | Database | PostgreSQL + pgvector | Stores data and enables similarity search |
 | Agent Framework | LangGraph | Orchestrates multi-step AI workflows |
 | RAG Framework | LlamaIndex | Manages retrieval and querying |
@@ -109,20 +109,20 @@ A model that converts text into numerical vectors (lists of numbers) that captur
 
 ---
 
-#### Azure Document Intelligence
+#### LlamaParser (LlamaCloud)
 
 **What it is:**  
-A cloud service that extracts text, tables, and structure from documents like PDFs.
+A cloud service from LlamaIndex that extracts text, tables, and structure from documents like PDFs using advanced AI models.
 
 **Why we chose it:**
-- **Handles complex layouts**: Medical papers have multi-column text, tables, figures, headers—this tool understands all of it
-- **High accuracy**: Trained on millions of documents
+- **Handles complex layouts**: Medical papers have multi-column text, tables, figures, headers—LlamaParser understands all of it
+- **High accuracy**: Uses AI-powered extraction for superior quality
 - **Table extraction**: Critical for medical papers with data tables
-- **Azure integration**: Consistent with our other Azure services
+- **LlamaIndex integration**: Seamless integration with our RAG framework
 
-**Role in our system:** When we upload a medical research PDF, this service reads it and extracts the text in a structured way, preserving the meaning and organization.
+**Role in our system:** When we upload a medical research PDF, LlamaParser reads it and extracts the text in a structured way, preserving the meaning and organization in markdown format.
 
-**For non-technical readers:** Medical papers are complex documents with graphs, tables, and special formatting. This tool "reads" those papers like a human would, understanding that a table is a table and a heading is a heading.
+**For non-technical readers:** Medical papers are complex documents with graphs, tables, and special formatting. LlamaParser "reads" those papers like a human would, understanding that a table is a table and a heading is a heading.
 
 ---
 
@@ -307,7 +307,7 @@ The technologies were selected to work together as a cohesive system:
                                  ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                          AI SERVICES                              │
-│  Azure OpenAI (LLM + embeddings) + Azure Doc Intelligence        │
+│  Azure OpenAI (LLM + embeddings) + LlamaParser                   │
 └──────────────────────────────────────────────────────────────────┘
                                  │
                                  ▼
@@ -330,7 +330,7 @@ The technologies were selected to work together as a cohesive system:
 ```
 
 **Key principles:**
-1. **Azure consistency**: LLM, embeddings, and document parsing all on Azure for unified billing, compliance, and support
+1. **Best-of-breed tools**: Azure for LLM and embeddings, LlamaCloud for document parsing - each service optimized for its purpose
 2. **Python ecosystem**: All tools are Python-native for seamless integration
 3. **Speed at every layer**: uv, Ruff, FastAPI, pgvector—all chosen for performance
 4. **AI-native observability**: Langfuse understands LLM applications in ways generic tools don't

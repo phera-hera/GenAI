@@ -84,17 +84,13 @@ class Settings(BaseSettings):
     )
 
     # -------------------------------------------------------------------------
-    # Azure Document Intelligence Settings
+    # LlamaCloud LlamaParser Settings
     # -------------------------------------------------------------------------
-    azure_document_intelligence_endpoint: str = Field(default="")
-    azure_document_intelligence_key: str = Field(default="")
+    llama_cloud_api_key: str = Field(default="")
     
-    def is_azure_document_intelligence_configured(self) -> bool:
-        """Check if Azure Document Intelligence is properly configured."""
-        return bool(
-            self.azure_document_intelligence_endpoint 
-            and self.azure_document_intelligence_key
-        )
+    def is_llama_parser_configured(self) -> bool:
+        """Check if LlamaParser is properly configured."""
+        return bool(self.llama_cloud_api_key)
 
     # -------------------------------------------------------------------------
     # GCP Settings

@@ -1,7 +1,7 @@
 """
 PDF Parser for Medical Research Papers
 
-Provides PDF parsing capabilities using Azure Document Intelligence
+Provides PDF parsing capabilities using LlamaParser (LlamaCloud)
 for extracting structured content from medical research PDFs,
 including tables, sections, and metadata.
 """
@@ -14,7 +14,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.exceptions import DocumentParsingError
-from app.services.azure_document import AzureDocumentClient, get_document_client
+from app.services.llama_parser import LlamaParserClient, get_llama_parser_client
 
 from .document_result import (
     DocumentSection,
@@ -92,7 +92,7 @@ SECTION_PATTERNS: dict[SectionType, list[str]] = {
 
 class MedicalPDFParser:
     """
-    Parser for medical research PDFs using Azure Document Intelligence.
+    Parser for medical research PDFs using LlamaParser.
     
     This parser is optimized for medical research papers and provides:
     - Section identification (Abstract, Methods, Results, etc.)
@@ -103,26 +103,26 @@ class MedicalPDFParser:
     
     def __init__(
         self,
-        azure_client: AzureDocumentClient | None = None,
+        llama_parser_client: LlamaParserClient | None = None,
     ):
         """
         Initialize the medical PDF parser.
         
         Args:
-            azure_client: Azure Document Intelligence client (uses global if None)
+            llama_parser_client: LlamaParser client (uses global if None)
         """
-        self._azure_client = azure_client
+        self._llama_parser_client = llama_parser_client
     
     @property
-    def azure_client(self) -> AzureDocumentClient:
-        """Get the Azure Document Intelligence client."""
-        if self._azure_client is None:
-            self._azure_client = get_document_client()
-        return self._azure_client
+    def llama_parser_client(self) -> LlamaParserClient:
+        """Get the LlamaParser client."""
+        if self._llama_parser_client is None:
+            self._llama_parser_client = get_llama_parser_client()
+        return self._llama_parser_client
     
     def is_available(self) -> bool:
-        """Check if the parser is available (Azure configured)."""
-        return settings.is_azure_document_intelligence_configured()
+        """Check if the parser is available (LlamaParser configured)."""
+        return settings.is_llama_parser_configured()
     
     def parse(
         self,
@@ -150,8 +150,8 @@ class MedicalPDFParser:
         file_hash = hashlib.sha256(pdf_content).hexdigest()
         
         try:
-            # Use Azure Document Intelligence for extraction
-            raw_result = self.azure_client.analyze_pdf(pdf_content)
+            # Use LlamaParser for extraction
+            raw_result = self.llama_parser_client.analyze_pdf(pdf_content)
             
             # Process the raw result into structured format
             parsed = self._process_raw_result(raw_result)
@@ -188,53 +188,12 @@ class MedicalPDFParser:
                 ),
             )
     
-    def parse_from_url(
-        self,
-        pdf_url: str,
-        extract_metadata: bool = True,
-    ) -> ParsedDocument:
-        """
-        Parse a PDF document from a URL.
-        
-        Args:
-            pdf_url: URL to the PDF file
-            extract_metadata: Whether to extract paper metadata
-            
-        Returns:
-            ParsedDocument with extracted content
-        """
-        logger.info(f"Starting PDF parsing from URL: {pdf_url}")
-        
-        try:
-            raw_result = self.azure_client.analyze_pdf_from_url(pdf_url)
-            parsed = self._process_raw_result(raw_result)
-            
-            if extract_metadata:
-                parsed.metadata = self._extract_metadata(raw_result, parsed)
-            
-            parsed.metadata.source_file = pdf_url
-            parsed.metadata.parsed_at = datetime.now(timezone.utc)
-            
-            return parsed
-            
-        except Exception as e:
-            logger.error(f"Failed to parse PDF from URL: {e}")
-            return ParsedDocument(
-                full_text="",
-                is_successful=False,
-                parsing_errors=[str(e)],
-                metadata=PaperMetadata(
-                    source_file=pdf_url,
-                    parsed_at=datetime.now(timezone.utc),
-                ),
-            )
-    
     def _process_raw_result(self, raw_result: dict[str, Any]) -> ParsedDocument:
         """
-        Process raw Azure Document Intelligence result into ParsedDocument.
+        Process raw LlamaParser result into ParsedDocument.
         
         Args:
-            raw_result: Raw extraction result from Azure
+            raw_result: Raw extraction result from LlamaParser
             
         Returns:
             Structured ParsedDocument
@@ -269,7 +228,7 @@ class MedicalPDFParser:
         Extract and structure tables from raw data.
         
         Args:
-            raw_tables: Raw table data from Azure
+            raw_tables: Raw table data from LlamaParser
             
         Returns:
             List of structured ExtractedTable objects
@@ -336,7 +295,7 @@ class MedicalPDFParser:
         medical papers and groups content accordingly.
         
         Args:
-            paragraphs: List of paragraph data from Azure
+            paragraphs: List of paragraph data from LlamaParser
             
         Returns:
             List of identified sections
@@ -408,7 +367,7 @@ class MedicalPDFParser:
         
         Args:
             text: Header text
-            role: Paragraph role from Azure (e.g., "sectionHeading")
+            role: Paragraph role from LlamaParser (e.g., "sectionHeading")
             
         Returns:
             SectionType if identified, None otherwise
@@ -489,7 +448,7 @@ class MedicalPDFParser:
         bibliographic information from the parsed content.
         
         Args:
-            raw_result: Raw Azure extraction result
+            raw_result: Raw LlamaParser extraction result
             parsed: Already processed ParsedDocument
             
         Returns:
@@ -568,4 +527,3 @@ def get_pdf_parser() -> MedicalPDFParser:
     if _pdf_parser is None:
         _pdf_parser = MedicalPDFParser()
     return _pdf_parser
-

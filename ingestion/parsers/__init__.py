@@ -1,11 +1,11 @@
 """
 Document Parsers for Medical Research Papers
 
-Provides PDF parsing capabilities using Azure Document Intelligence
+Provides PDF parsing capabilities using LlamaParser (LlamaCloud)
 as the primary parser, with a PyMuPDF fallback for offline use.
 
 Main components:
-- MedicalPDFParser: Primary parser using Azure Document Intelligence
+- MedicalPDFParser: Primary parser using LlamaParser
 - FallbackPDFParser: Backup parser using PyMuPDF (offline capable)
 - PDFParserFacade: Unified interface that auto-selects best parser
 - ParsedDocument: Structured representation of parsed papers

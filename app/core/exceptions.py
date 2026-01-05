@@ -201,7 +201,7 @@ class StorageError(AppException):
 
 
 class DocumentParsingError(AppException):
-    """Raised when Azure Document Intelligence parsing fails."""
+    """Raised when document parsing fails (LlamaParser or fallback)."""
 
     def __init__(
         self,

@@ -12,7 +12,7 @@ The application uses the following cloud services:
 | Cloud SQL | GCP | PostgreSQL database with pgvector |
 | Cloud Run | GCP | Host the FastAPI backend |
 | Azure OpenAI | Azure | GPT-4o for reasoning, embeddings |
-| Document Intelligence | Azure | PDF parsing and extraction |
+| Document Parsing | LlamaCloud | PDF parsing and extraction |
 | Langfuse | Cloud | Observability and tracing |
 
 ## Prerequisites
@@ -176,30 +176,27 @@ AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small
 
 ---
 
-## 3. Azure Document Intelligence Setup
+## 3. LlamaParser (LlamaCloud) Setup
 
-### Create Resource
+### Create Account
 
-1. Go to [Azure Portal](https://portal.azure.com)
-2. Create resource → "Azure AI Document Intelligence"
-3. Select pricing tier:
-   - F0 (Free): 500 pages/month
-   - S0 (Standard): Pay per page
-4. Wait for deployment
+1. Go to [LlamaCloud](https://cloud.llamaindex.ai)
+2. Sign up for an account
+3. Select a plan:
+   - Free: 1,000 pages/day
+   - Starter: Pay per page with higher limits
 
-### Get Credentials
+### Get API Key
 
-1. Go to your Document Intelligence resource
-2. Navigate to "Keys and Endpoint"
-3. Copy:
-   - Endpoint URL
-   - Key 1
+1. Go to your LlamaCloud dashboard
+2. Navigate to "API Keys"
+3. Create a new API key
+4. Copy the key (starts with `llx-`)
 
 ### Environment Variables
 
 ```bash
-AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=https://your-resource.cognitiveservices.azure.com/
-AZURE_DOCUMENT_INTELLIGENCE_KEY=your-key
+LLAMA_CLOUD_API_KEY=llx-your-api-key
 ```
 
 ---
@@ -343,7 +340,7 @@ gcloud run deploy femtech-api \
 ### Development
 
 - Use `db-f1-micro` for Cloud SQL (~$10/month)
-- Use F0 tier for Document Intelligence (free)
+- Use LlamaCloud free tier (1,000 pages/day)
 - Langfuse hobby tier (free)
 - Cloud Run scales to zero
 

@@ -5,7 +5,7 @@ Provides a unified interface for PDF parsing that automatically
 selects the best available parser based on configuration.
 
 Priority:
-1. Azure Document Intelligence (primary - better quality)
+1. LlamaParser (primary - better quality)
 2. PyMuPDF fallback (offline, basic extraction)
 """
 
@@ -42,7 +42,7 @@ class PDFParserFacade:
     """
     Unified PDF parser that selects the best available parser.
     
-    Automatically chooses between Azure Document Intelligence
+    Automatically chooses between LlamaParser
     and PyMuPDF based on availability and configuration.
     
     Usage:
@@ -52,28 +52,28 @@ class PDFParserFacade:
     
     def __init__(
         self,
-        prefer_azure: bool = True,
+        prefer_llama_parser: bool = True,
         allow_fallback: bool = True,
     ):
         """
         Initialize the parser facade.
         
         Args:
-            prefer_azure: Whether to prefer Azure over fallback
+            prefer_llama_parser: Whether to prefer LlamaParser over fallback
             allow_fallback: Whether to allow fallback parser
         """
-        self.prefer_azure = prefer_azure
+        self.prefer_llama_parser = prefer_llama_parser
         self.allow_fallback = allow_fallback
         
-        self._azure_parser: MedicalPDFParser | None = None
+        self._llama_parser: MedicalPDFParser | None = None
         self._fallback_parser: FallbackPDFParser | None = None
     
     @property
-    def azure_parser(self) -> MedicalPDFParser:
-        """Get the Azure parser instance."""
-        if self._azure_parser is None:
-            self._azure_parser = get_pdf_parser()
-        return self._azure_parser
+    def llama_parser(self) -> MedicalPDFParser:
+        """Get the LlamaParser instance."""
+        if self._llama_parser is None:
+            self._llama_parser = get_pdf_parser()
+        return self._llama_parser
     
     @property
     def fallback_parser(self) -> FallbackPDFParser:
@@ -89,17 +89,17 @@ class PDFParserFacade:
         Returns:
             The best available parser, or None if none available
         """
-        # Check Azure first if preferred
-        if self.prefer_azure and self.azure_parser.is_available():
-            return self.azure_parser
+        # Check LlamaParser first if preferred
+        if self.prefer_llama_parser and self.llama_parser.is_available():
+            return self.llama_parser
         
         # Try fallback
         if self.allow_fallback and self.fallback_parser.is_available():
             return self.fallback_parser
         
-        # If not preferring Azure, try it as last resort
-        if not self.prefer_azure and self.azure_parser.is_available():
-            return self.azure_parser
+        # If not preferring LlamaParser, try it as last resort
+        if not self.prefer_llama_parser and self.llama_parser.is_available():
+            return self.llama_parser
         
         return None
     
@@ -113,7 +113,7 @@ class PDFParserFacade:
         if parser is None:
             return "none"
         if isinstance(parser, MedicalPDFParser):
-            return "azure"
+            return "llama_parser"
         if isinstance(parser, FallbackPDFParser):
             return "fallback"
         return "unknown"
@@ -146,7 +146,7 @@ class PDFParserFacade:
                 full_text="",
                 is_successful=False,
                 parsing_errors=[
-                    "No PDF parser available. Configure Azure Document Intelligence "
+                    "No PDF parser available. Configure LlamaParser "
                     "or install PyMuPDF (pip install pymupdf) for fallback."
                 ],
                 metadata=PaperMetadata(
@@ -171,14 +171,14 @@ class PDFParserFacade:
         
         return result
     
-    def parse_with_azure(
+    def parse_with_llama_parser(
         self,
         pdf_content: bytes,
         source_file: str | None = None,
         extract_metadata: bool = True,
     ) -> ParsedDocument:
         """
-        Parse using Azure Document Intelligence specifically.
+        Parse using LlamaParser specifically.
         
         Args:
             pdf_content: PDF file content as bytes
@@ -189,16 +189,15 @@ class PDFParserFacade:
             ParsedDocument with extracted content
             
         Raises:
-            RuntimeError: If Azure parser is not available
+            RuntimeError: If LlamaParser is not available
         """
-        if not self.azure_parser.is_available():
+        if not self.llama_parser.is_available():
             raise RuntimeError(
-                "Azure Document Intelligence is not configured. "
-                "Set AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and "
-                "AZURE_DOCUMENT_INTELLIGENCE_KEY environment variables."
+                "LlamaParser is not configured. "
+                "Set LLAMA_CLOUD_API_KEY environment variable."
             )
         
-        return self.azure_parser.parse(
+        return self.llama_parser.parse(
             pdf_content=pdf_content,
             source_file=source_file,
             extract_metadata=extract_metadata,
@@ -274,4 +273,3 @@ def parse_pdf(
         source_file=source_file,
         extract_metadata=extract_metadata,
     )
-

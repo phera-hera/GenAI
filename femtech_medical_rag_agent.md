@@ -16,7 +16,7 @@ todos:
     dependencies:
       - foundation-setup
   - id: ingestion-parsing
-    content: Build PDF parsing with Azure Document Intelligence and table extraction
+    content: Build PDF parsing with LlamaParser and table extraction
     status: completed
     dependencies:
       - cloud-infra
@@ -76,15 +76,15 @@ A mobile-first diagnostic platform for women's vaginal health. The CV model (bui
 
 ## Technical Stack
 
-| Component | Technology | Rationale ||-----------|------------|-----------|| Language | Python 3.11 | Stability with LangGraph/LlamaIndex || Package Manager | uv | Fast, modern, simple || Backend | FastAPI | Standard, async support || LLM | Azure OpenAI (GPT-4o) | GDPR compliance || Embeddings | Azure OpenAI (text-embedding-3-small) | Same ecosystem || Document Parsing | Azure Document Intelligence | Azure credits, good table extraction || Vector DB | pgvector (PostgreSQL) | Simple, cost-effective || Agent Framework | LangGraph | Workflow orchestration || RAG Framework | LlamaIndex | Retrieval pipeline || Observability | Langfuse Cloud (Hobby) | Free tier, no self-hosting || Paper Storage | GCP Cloud Storage | Raw PDF storage || Database Hosting | GCP Cloud SQL | Managed PostgreSQL || Deployment | GCP Cloud Run | Pay-per-request, auto-scales to zero || Local Dev | Docker + docker-compose | Consistent environment || Auth | Placeholder (Zitadel later) | Deferred for MVP speed |---
+| Component | Technology | Rationale ||-----------|------------|-----------|| Language | Python 3.11 | Stability with LangGraph/LlamaIndex || Package Manager | uv | Fast, modern, simple || Backend | FastAPI | Standard, async support || LLM | Azure OpenAI (GPT-4o) | GDPR compliance || Embeddings | Azure OpenAI (text-embedding-3-small) | Same ecosystem || Document Parsing | LlamaParser (LlamaCloud) | LlamaIndex integration, excellent table extraction || Vector DB | pgvector (PostgreSQL) | Simple, cost-effective || Agent Framework | LangGraph | Workflow orchestration || RAG Framework | LlamaIndex | Retrieval pipeline || Observability | Langfuse Cloud (Hobby) | Free tier, no self-hosting || Paper Storage | GCP Cloud Storage | Raw PDF storage || Database Hosting | GCP Cloud SQL | Managed PostgreSQL || Deployment | GCP Cloud Run | Pay-per-request, auto-scales to zero || Local Dev | Docker + docker-compose | Consistent environment || Auth | Placeholder (Zitadel later) | Deferred for MVP speed |---
 
 ## System Architecture
 
 ```mermaid
 flowchart TB
     subgraph ingestion [Ingestion Pipeline - Batch/Weekly]
-        GCP[GCP Bucket PDFs] --> AzureDoc[Azure Document Intelligence]
-        AzureDoc --> Chunker[Medical Paper Chunker]
+        GCP[GCP Bucket PDFs] --> LlamaParser[LlamaParser]
+        LlamaParser --> Chunker[Medical Paper Chunker]
         Chunker --> Embedder[Azure OpenAI Embeddings]
         Embedder --> PGVector[(pgvector)]
     end
@@ -233,13 +233,13 @@ Every response must include medical disclaimers.---
 - FastAPI skeleton with health endpoints
 - Database schema with Alembic migrations
 - GCP project, bucket, and Cloud SQL setup
-- Azure OpenAI and Document Intelligence configuration
+- Azure OpenAI and LlamaParser configuration
 - Langfuse integration
 
 ### Phase 2: Ingestion Pipeline (Week 2)
 
 - GCP bucket operations for PDF upload/retrieval
-- Azure Document Intelligence parsing with table extraction
+- LlamaParser parsing with table extraction
 - Section-based chunking for medical papers
 - Azure OpenAI embedding generation
 - pgvector storage with similarity search

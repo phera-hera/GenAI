@@ -2,7 +2,7 @@
 Ingestion Pipeline for Processing Medical Research Papers
 
 This module provides the complete pipeline for:
-1. Parsing PDFs using Azure Document Intelligence (with PyMuPDF fallback)
+1. Parsing PDFs using LlamaParser (with PyMuPDF fallback)
 2. Chunking papers into semantic sections
 3. Generating embeddings using Azure OpenAI
 4. Storing chunks in pgvector for retrieval

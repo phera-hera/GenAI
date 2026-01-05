@@ -156,27 +156,27 @@ def check_azure_openai_configuration() -> dict:
     return results
 
 
-def check_azure_document_intelligence() -> dict:
-    """Check Azure Document Intelligence configuration."""
-    print_section("Azure Document Intelligence")
+def check_llama_parser() -> dict:
+    """Check LlamaParser configuration."""
+    print_section("LlamaParser (LlamaCloud)")
     
     results = {"configured": False, "connected": False}
     
     try:
         from app.core.config import settings
-        from app.services.azure_document import AzureDocumentClient
+        from app.services.llama_parser import LlamaParserClient
         
-        client = AzureDocumentClient()
+        client = LlamaParserClient()
         
         # Check configuration
         if client.is_configured():
             print_status("Configuration", True)
-            print(f"       Endpoint: {client.endpoint}")
+            print(f"       API Key: {'*' * 8}...{client.api_key[-4:] if client.api_key else 'N/A'}")
             results["configured"] = True
         else:
             print_status(
                 "Configuration", False,
-                "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT or KEY not set"
+                "LLAMA_CLOUD_API_KEY not set"
             )
             return results
         
@@ -397,21 +397,20 @@ STEP 3: Azure OpenAI Setup
    AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 4: Azure Document Intelligence Setup
+STEP 4: LlamaParser (LlamaCloud) Setup
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. Create Document Intelligence Resource:
-   → Go to Azure Portal
-   → Create resource → Azure AI Document Intelligence
-   → Pricing tier: S0 or F0 (free tier)
+1. Create LlamaCloud Account:
+   → Go to https://cloud.llamaindex.ai
+   → Sign up for an account (free tier available)
 
-2. Get Credentials:
-   → Go to Keys and Endpoint
-   → Copy Endpoint and Key 1
+2. Get API Key:
+   → Go to API Keys section
+   → Create a new API key
+   → Copy the key
 
 3. Set Environment Variables:
-   AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=https://your-resource.cognitiveservices.azure.com/
-   AZURE_DOCUMENT_INTELLIGENCE_KEY=your-key
+   LLAMA_CLOUD_API_KEY=llx-your-api-key
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 5: Langfuse Setup
@@ -479,9 +478,9 @@ def check_all() -> bool:
     if not azure_openai_results["chat_connected"]:
         all_passed = False
     
-    # Check Azure Document Intelligence
-    azure_doc_results = check_azure_document_intelligence()
-    if not azure_doc_results["connected"]:
+    # Check LlamaParser
+    llama_parser_results = check_llama_parser()
+    if not llama_parser_results["connected"]:
         all_passed = False
     
     # Check Langfuse
@@ -515,7 +514,7 @@ def main():
     )
     parser.add_argument(
         "--check",
-        choices=["gcp", "azure", "azure-openai", "azure-doc", "langfuse", "database"],
+        choices=["gcp", "azure", "azure-openai", "llama-parser", "langfuse", "database"],
         help="Check specific service",
     )
     parser.add_argument(
@@ -536,8 +535,8 @@ def main():
             check_gcp_configuration()
         elif args.check in ("azure", "azure-openai"):
             check_azure_openai_configuration()
-        elif args.check == "azure-doc":
-            check_azure_document_intelligence()
+        elif args.check == "llama-parser":
+            check_llama_parser()
         elif args.check == "langfuse":
             check_langfuse_configuration()
         elif args.check == "database":

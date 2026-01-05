@@ -198,7 +198,7 @@ async def cloud_services_check() -> CloudServicesStatus:
     Tests actual connections to:
     - GCP Cloud Storage
     - Azure OpenAI
-    - Azure Document Intelligence
+    - LlamaParser
     - Langfuse
     
     Note: This endpoint may take a few seconds as it tests real connections.
@@ -211,8 +211,8 @@ async def cloud_services_check() -> CloudServicesStatus:
     # Check Azure OpenAI
     services["azure_openai"] = await _check_azure_openai()
     
-    # Check Azure Document Intelligence
-    services["azure_document_intelligence"] = await _check_azure_document()
+    # Check LlamaParser
+    services["llama_parser"] = await _check_llama_parser()
     
     # Check Langfuse
     services["langfuse"] = await _check_langfuse()
@@ -292,8 +292,8 @@ async def _check_azure_openai() -> dict[str, Any]:
     return result
 
 
-async def _check_azure_document() -> dict[str, Any]:
-    """Check Azure Document Intelligence connectivity."""
+async def _check_llama_parser() -> dict[str, Any]:
+    """Check LlamaParser connectivity."""
     result = {
         "configured": False,
         "connected": False,
@@ -301,9 +301,9 @@ async def _check_azure_document() -> dict[str, Any]:
     }
     
     try:
-        from app.services.azure_document import AzureDocumentClient
+        from app.services.llama_parser import LlamaParserClient
         
-        client = AzureDocumentClient()
+        client = LlamaParserClient()
         result["configured"] = client.is_configured()
         
         if result["configured"]:
@@ -311,7 +311,7 @@ async def _check_azure_document() -> dict[str, Any]:
             result["connected"] = True
     except Exception as e:
         result["error"] = str(e)
-        logger.warning(f"Azure Document Intelligence check failed: {e}")
+        logger.warning(f"LlamaParser check failed: {e}")
     
     return result
 

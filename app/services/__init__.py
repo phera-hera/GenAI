@@ -3,14 +3,14 @@ Business logic services.
 
 This module provides client wrappers for all external services:
 - GCP Cloud Storage for PDF storage
-- Azure Document Intelligence for PDF parsing
+- LlamaParser for PDF parsing
 - Azure OpenAI for LLM and embeddings
 - Langfuse for observability
 """
 
-from app.services.azure_document import (
-    AzureDocumentClient,
-    get_document_client,
+from app.services.llama_parser import (
+    LlamaParserClient,
+    get_llama_parser_client,
 )
 from app.services.azure_openai import (
     AzureOpenAIClient,
@@ -32,9 +32,9 @@ __all__ = [
     # GCP Storage
     "GCPStorageClient",
     "get_storage_client",
-    # Azure Document Intelligence
-    "AzureDocumentClient",
-    "get_document_client",
+    # LlamaParser
+    "LlamaParserClient",
+    "get_llama_parser_client",
     # Azure OpenAI
     "AzureOpenAIClient",
     "get_openai_client",

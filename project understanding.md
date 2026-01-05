@@ -236,7 +236,7 @@ The AI must **ALWAYS**:
 ## Paper Processing Strategy
 
 ### Document Parsing
-- Azure Document Intelligence for high-quality extraction
+- LlamaParser (LlamaCloud) for high-quality extraction
 - Special handling for tables (common in medical papers)
 - Structured output for consistent chunking
 
