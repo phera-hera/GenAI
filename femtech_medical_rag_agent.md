@@ -175,7 +175,7 @@ Medical_Agent/
 │   └── prompts/             # System prompts, templates, disclaimers
 ├── ingestion/
 │   ├── pipeline.py          # Main orchestrator
-│   ├── parsers/             # Azure Doc Intelligence, fallback
+│   ├── parsers/             # LlamaParser, fallback
 │   ├── chunkers/            # Section-based medical paper chunking
 │   ├── embedders/           # Azure OpenAI embeddings
 │   └── storage/             # GCP bucket, vector store operations

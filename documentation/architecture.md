@@ -31,7 +31,7 @@
 │         SERVICE LAYER           │         │       INGESTION PIPELINE        │
 │  ┌───────────────────────────┐  │         │  ┌───────────────────────────┐  │
 │  │     Query Service         │  │         │  │   Document Parser         │  │
-│  │  (orchestrates agent)     │  │         │  │   (Azure Doc Intelligence)│  │
+│  │  (orchestrates agent)     │  │         │  │   (LlamaParser)           │  │
 │  └─────────────┬─────────────┘  │         │  └─────────────┬─────────────┘  │
 │                │                │         │                │                │
 │                ▼                │         │                ▼                │
@@ -148,7 +148,7 @@ Shows how medical research papers are processed and stored:
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │   GCP       │     │   Parser    │     │   Chunker   │     │  Embedder   │
-│   Storage   │     │  (Azure DI) │     │             │     │ (Azure OAI) │
+│   Storage   │     │ (LlamaParser)│     │             │     │ (Azure OAI) │
 └──────┬──────┘     └──────┬──────┘     └──────┬──────┘     └──────┬──────┘
        │                   │                   │                   │
        │  PDF upload       │                   │                   │

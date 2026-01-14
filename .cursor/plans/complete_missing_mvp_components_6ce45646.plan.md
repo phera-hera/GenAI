@@ -161,5 +161,3 @@ Add tests for:
 - `app/schemas/paper.py` - Paper management schemas
 - `app/api/routes/query.py` - Main analysis endpoint
 - `app/api/routes/papers.py` - Paper management endpoints
-- `evaluation/evaluator.py` - Evaluation runner
-- `evaluation/metrics.py` - Evaluation metrics
