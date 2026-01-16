@@ -2,10 +2,10 @@
 Azure OpenAI Embedding Generator for Medical Paper Chunks
 
 Provides embedding generation for chunked medical paper content using
-Azure OpenAI's text-embedding-3-small model.
+Azure OpenAI's text-embedding-3-large model.
 
 Features:
-- Single and batch embedding generation
+- Single and batch embedding generation (3072-dimensional vectors)
 - Rate limiting and retry logic
 - Progress tracking for large batches
 - Token estimation and validation
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 # Azure OpenAI embedding limits
-MAX_TOKENS_PER_INPUT = 8191  # text-embedding-3-small limit
+MAX_TOKENS_PER_INPUT = 8191  # text-embedding-3-large limit (same as 3-small)
 MAX_BATCH_SIZE = 100  # Azure OpenAI batch limit
 CHARS_PER_TOKEN_ESTIMATE = 4  # Rough estimation
 
@@ -102,7 +102,7 @@ class AzureEmbedder:
 
     @property
     def embedding_dimension(self) -> int:
-        """Get the embedding dimension (1536 for text-embedding-3-small)."""
+        """Get the embedding dimension (3072 for text-embedding-3-large)."""
         return self._embedding_dimension
 
     def estimate_tokens(self, text: str) -> int:

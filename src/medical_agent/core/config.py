@@ -80,17 +80,28 @@ class Settings(BaseSettings):
     azure_openai_api_version: str = Field(default="2024-02-15-preview")
     azure_openai_deployment_name: str = Field(default="gpt-4o")
     azure_openai_embedding_deployment_name: str = Field(
-        default="text-embedding-3-small"
+        default="text-embedding-3-large"
     )
 
     # -------------------------------------------------------------------------
-    # LlamaCloud LlamaParser Settings
+    # LlamaParser Settings (LVM Mode with Azure OpenAI)
     # -------------------------------------------------------------------------
-    llama_cloud_api_key: str = Field(default="")
-    
+    # LlamaParser now uses LVM mode with your Azure OpenAI GPT-4o model
+    # No separate API key needed - uses Azure OpenAI credentials
+    llama_cloud_api_key: str = Field(default="")  # Deprecated, kept for backward compat
+
     def is_llama_parser_configured(self) -> bool:
-        """Check if LlamaParser is properly configured."""
-        return bool(self.llama_cloud_api_key)
+        """
+        Check if LlamaParser LVM mode is properly configured.
+
+        LVM mode requires Azure OpenAI to be configured (same as medical reasoning).
+        """
+        return bool(
+            self.azure_openai_api_key
+            and self.azure_openai_endpoint
+            and self.azure_openai_api_version
+            and self.azure_openai_deployment_name
+        )
 
     # -------------------------------------------------------------------------
     # GCP Settings
@@ -118,7 +129,8 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Vector Search Settings
     # -------------------------------------------------------------------------
-    embedding_dimension: int = Field(default=1536)
+    # text-embedding-3-large produces 3072-dimensional vectors
+    embedding_dimension: int = Field(default=3072)
     vector_similarity_top_k: int = Field(default=10)
 
     # -------------------------------------------------------------------------

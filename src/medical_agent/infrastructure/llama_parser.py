@@ -1,9 +1,12 @@
 """
-LlamaParser Client for PDF Parsing
+LlamaParser Client for PDF Parsing with LVM Mode
 
 Provides document analysis capabilities for extracting structured
-content from medical research PDFs, including tables and sections,
-using LlamaCloud's LlamaParser service.
+content from medical research PDFs using LlamaParser's LVM (Large Vision Model) mode
+with Azure OpenAI's multimodal GPT-4o model.
+
+The LVM mode uses your own Azure OpenAI model for PDF parsing, providing
+better control and cost efficiency compared to the API-based approach.
 """
 
 import logging
@@ -20,76 +23,117 @@ logger = logging.getLogger(__name__)
 
 class LlamaParserClient:
     """
-    Client for LlamaCloud LlamaParser.
-    
-    Extracts structured content from medical research PDFs including:
+    Client for LlamaParser in LVM (Large Vision Model) mode.
+
+    Uses Azure OpenAI's GPT-4o multimodal model for PDF parsing instead of
+    the LlamaCloud API. This mode extracts structured content from medical
+    research PDFs including:
     - Text content with layout information
     - Tables with cell data
     - Document structure (sections, paragraphs)
+    - Figures and visual elements
     """
-    
+
     def __init__(
         self,
-        api_key: str | None = None,
+        azure_api_key: str | None = None,
+        azure_endpoint: str | None = None,
+        azure_api_version: str | None = None,
+        azure_deployment_name: str | None = None,
     ):
         """
-        Initialize the LlamaParser client.
-        
+        Initialize the LlamaParser client in LVM mode.
+
         Args:
-            api_key: LlamaCloud API key (defaults to settings)
+            azure_api_key: Azure OpenAI API key (defaults to settings)
+            azure_endpoint: Azure OpenAI endpoint (defaults to settings)
+            azure_api_version: Azure OpenAI API version (defaults to settings)
+            azure_deployment_name: Azure OpenAI deployment name (defaults to settings)
         """
-        self.api_key = api_key or settings.llama_cloud_api_key
+        self.azure_api_key = azure_api_key or settings.azure_openai_api_key
+        self.azure_endpoint = azure_endpoint or settings.azure_openai_endpoint
+        self.azure_api_version = azure_api_version or settings.azure_openai_api_version
+        self.azure_deployment_name = (
+            azure_deployment_name or settings.azure_openai_deployment_name
+        )
         self._client: LlamaParse | None = None
-    
+
     @property
     def client(self) -> LlamaParse:
-        """Get or create the LlamaParser client."""
+        """Get or create the LlamaParser client in LVM mode."""
         if self._client is None:
             if not self.is_configured():
                 raise DocumentParsingError(
-                    "LlamaParser is not configured"
+                    "LlamaParser LVM mode is not configured. "
+                    "Set AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, "
+                    "AZURE_OPENAI_API_VERSION, and AZURE_OPENAI_DEPLOYMENT_NAME"
                 )
-            
+
+            logger.info(f"Initializing LlamaParser in LVM mode with Azure GPT-4o")
+
             self._client = LlamaParse(
-                api_key=self.api_key,
-                result_type="markdown",
+                # Use LVM (Large Vision Model) mode with your own Azure model
+                parse_mode="parse_page_with_lvm",
+                # Use Azure OpenAI's multimodal capabilities
+                use_vendor_multimodal_model=True,
+                # Azure OpenAI configuration
+                azure_openai_api_key=self.azure_api_key,
+                azure_openai_endpoint=self.azure_endpoint,
+                azure_openai_api_version=self.azure_api_version,
+                azure_openai_deployment_name=self.azure_deployment_name,
+                # Parsing instructions for medical research papers
                 parsing_instruction=(
                     "This is a medical research paper. "
                     "Extract all text, tables, figures, and section headers clearly. "
                     "Preserve the hierarchical structure of sections. "
-                    "For tables, maintain the row and column structure."
+                    "For tables, maintain the row and column structure. "
+                    "Include all numerical data, citations, and medical terminology."
                 ),
+                result_type="markdown",
                 verbose=False,
             )
         return self._client
-    
+
     def is_configured(self) -> bool:
-        """Check if LlamaParser is properly configured."""
-        return bool(self.api_key)
-    
+        """Check if LlamaParser LVM mode is properly configured."""
+        return bool(
+            self.azure_api_key
+            and self.azure_endpoint
+            and self.azure_api_version
+            and self.azure_deployment_name
+        )
+
     def verify_connection(self) -> bool:
         """
-        Verify that we can connect to LlamaParser.
-        
+        Verify that we can connect to Azure OpenAI for PDF parsing.
+
         Returns:
             True if connection is successful
-            
+
         Raises:
             DocumentParsingError: If connection fails
         """
         if not self.is_configured():
             raise DocumentParsingError(
-                "LlamaParser is not configured"
+                "LlamaParser LVM mode is not configured. "
+                "Set AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, "
+                "AZURE_OPENAI_API_VERSION, and AZURE_OPENAI_DEPLOYMENT_NAME"
             )
-        
+
         try:
             # Simple connectivity check by accessing the client
+            logger.info(
+                f"Verifying connection to Azure OpenAI: {self.azure_endpoint}"
+            )
             _ = self.client
-            logger.info("Successfully connected to LlamaParser")
+            logger.info(
+                f"Successfully configured LlamaParser LVM mode with Azure GPT-4o "
+                f"(deployment: {self.azure_deployment_name})"
+            )
             return True
         except Exception as e:
             raise DocumentParsingError(
-                f"Failed to connect to LlamaParser: {e}"
+                f"Failed to configure LlamaParser LVM mode: {e}"
             )
     
     @retry(

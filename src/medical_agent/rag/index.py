@@ -48,7 +48,7 @@ class VectorStoreConfig:
     # Table configuration
     table_name: str = "paper_chunks"
     schema_name: str = "public"
-    embed_dim: int = 1536
+    embed_dim: int = 3072  # text-embedding-3-large dimension (overridden by settings in from_settings)
 
     # Hybrid search settings (semantic + BM25)
     hybrid_search: bool = True  # Enable hybrid by default

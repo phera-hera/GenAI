@@ -151,13 +151,29 @@ async def analyze_query_with_llm(
     else:
         symptoms_str = str(symptoms)
 
+    # Extract and format health profile data for the prompt
+    age = health_profile.get("age", "Not provided")
+
+    # Handle ethnic backgrounds (convert list to string)
+    ethnic_backgrounds = health_profile.get("medical_history", {}).get("ethnic_backgrounds", [])
+    if isinstance(ethnic_backgrounds, list):
+        ethnicity = ", ".join(ethnic_backgrounds) if ethnic_backgrounds else "Not provided"
+    else:
+        ethnicity = str(ethnic_backgrounds) if ethnic_backgrounds else "Not provided"
+
+    # Medical history includes diagnoses, hormonal info, fertility info, etc.
+    medical_history = health_profile.get("medical_history", {})
+
+    # Additional info might include other context
+    additional_info = {}
+
     user_message = QUERY_ANALYZER_USER_TEMPLATE.format(
         ph_value=ph_value,
-        age=health_profile.get("age", "Not provided"),
-        ethnicity=health_profile.get("ethnicity", "Not provided"),
+        age=age,
+        ethnicity=ethnicity,
         symptoms=symptoms_str,
-        medical_history=json.dumps(health_profile.get("medical_history", {})),
-        additional_info=json.dumps(health_profile.get("additional_info", {})),
+        medical_history=json.dumps(medical_history),
+        additional_info=json.dumps(additional_info),
         query_text=query_text or "None",
     )
 

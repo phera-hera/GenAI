@@ -99,14 +99,27 @@ async def reason_with_llm(
     else:
         symptoms_str = str(symptoms)
 
+    # Extract and format health profile data (same as in query_analyzer)
+    age = health_profile.get("age", "Not provided")
+
+    # Handle ethnic backgrounds (convert list to string)
+    ethnic_backgrounds = health_profile.get("medical_history", {}).get("ethnic_backgrounds", [])
+    if isinstance(ethnic_backgrounds, list):
+        ethnicity = ", ".join(ethnic_backgrounds) if ethnic_backgrounds else "Not provided"
+    else:
+        ethnicity = str(ethnic_backgrounds) if ethnic_backgrounds else "Not provided"
+
+    # Medical history includes diagnoses, hormonal info, fertility info, etc.
+    medical_history = health_profile.get("medical_history", {})
+
     # Format research chunks
     research_chunks = format_research_chunks_for_reasoning(retrieved_chunks)
 
     user_message = REASONER_USER_TEMPLATE.format(
-        age=health_profile.get("age", "Not provided"),
-        ethnicity=health_profile.get("ethnicity", "Not provided"),
+        age=age,
+        ethnicity=ethnicity,
         symptoms=symptoms_str,
-        medical_history=json.dumps(health_profile.get("medical_history", {})),
+        medical_history=json.dumps(medical_history),
         ph_value=query_analysis.get("ph_value", state.get("ph_value")),
         ph_category=query_analysis.get("ph_category", "unknown"),
         risk_level=risk_assessment.get("risk_level", "MONITOR"),
