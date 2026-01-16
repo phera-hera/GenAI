@@ -18,8 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install uv for fast package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Copy dependency files
+# Copy dependency files and source for editable install
 COPY pyproject.toml ./
+COPY src/ ./src/
 
 # Create virtual environment and install dependencies
 RUN uv venv /opt/venv
@@ -43,6 +44,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Default command
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "medical_agent.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 

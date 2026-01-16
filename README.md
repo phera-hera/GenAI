@@ -30,7 +30,7 @@ This platform takes pH values from test strip photos (provided by a separate CV 
 | Package Manager | uv |
 | Backend | FastAPI |
 | LLM | Azure OpenAI (GPT-4o) |
-| Embeddings | Azure OpenAI (text-embedding-3-small) |
+| Embeddings | Azure OpenAI (text-embedding-3-large) |
 | Document Parsing | LlamaParser (LlamaCloud) |
 | Vector DB | pgvector (PostgreSQL) |
 | Agent Framework | LangGraph |
@@ -85,7 +85,7 @@ This platform takes pH values from test strip photos (provided by a separate CV 
 
 7. **Start the development server**
    ```bash
-   uvicorn app.main:app --reload
+   uvicorn medical_agent.api.main:app --reload
    ```
 
    Or with Docker:
@@ -109,39 +109,71 @@ This platform takes pH values from test strip photos (provided by a separate CV 
 
 ```
 Medical_Agent/
-├── app/
-│   ├── api/routes/          # FastAPI endpoints
-│   ├── core/                # Config, security, exceptions
-│   ├── db/                  # Database models and repositories
-│   ├── schemas/             # Pydantic models
-│   ├── services/            # Business logic
-│   └── main.py
-├── agent/
-│   ├── graph.py             # LangGraph workflow
-│   ├── state.py             # Agent state schema
-│   ├── nodes/               # Individual agent nodes
-│   └── prompts/             # System prompts and templates
-├── ingestion/
-│   ├── pipeline.py          # Main orchestrator
-│   ├── parsers/             # Document parsing
-│   ├── chunkers/            # Medical paper chunking
-│   ├── embedders/           # Embedding generation
-│   └── storage/             # Storage operations
-├── rag/
-│   ├── index.py             # LlamaIndex setup
-│   ├── retriever.py         # Custom retriever
-│   └── query_engine.py
-├── evaluation/              # Testing framework
-├── infrastructure/
-│   └── gcp/                 # Terraform IaC for GCP
-├── scripts/                 # CLI utilities
-├── tests/
-├── data/golden_set/         # Test cases
-├── alembic/                 # Database migrations
+├── src/
+│   └── medical_agent/                    # Main package namespace
+│       ├── core/                         # Domain core (no dependencies)
+│       │   ├── config.py                 # Application configuration
+│       │   └── exceptions.py             # Custom exceptions
+│       │
+│       ├── infrastructure/               # External services & integrations
+│       │   ├── azure_openai.py          # Azure OpenAI client
+│       │   ├── langfuse_client.py       # Observability client
+│       │   ├── llama_parser.py          # PDF parsing client
+│       │   ├── gcp_storage.py           # GCP Cloud Storage client
+│       │   └── database/                # Database layer
+│       │       ├── models.py            # SQLAlchemy models
+│       │       ├── session.py           # DB session management
+│       │       └── base.py              # Base classes
+│       │
+│       ├── ingestion/                   # Document processing pipeline
+│       │   ├── pipeline.py              # Main orchestrator
+│       │   ├── parsers/                 # PDF parsing
+│       │   ├── chunkers/                # Medical paper chunking
+│       │   ├── embedders/               # Embedding generation
+│       │   └── storage/                 # Vector storage operations
+│       │
+│       ├── rag/                         # Retrieval-Augmented Generation
+│       │   ├── index.py                 # LlamaIndex setup
+│       │   ├── retriever.py             # Hybrid retriever (semantic + BM25)
+│       │   └── query_engine.py          # Query processing
+│       │
+│       ├── agent/                       # LangGraph medical reasoning workflow
+│       │   ├── graph.py                 # Workflow definition
+│       │   ├── state.py                 # Agent state schema
+│       │   ├── nodes/                   # Individual agent nodes
+│       │   │   ├── query_analyzer.py   # pH parsing & query generation
+│       │   │   ├── retriever.py        # Context retrieval
+│       │   │   ├── risk_assessor.py    # Risk level determination
+│       │   │   ├── reasoner.py         # Evidence synthesis
+│       │   │   └── response_generator.py # Final response formatting
+│       │   └── prompts/                 # System prompts and templates
+│       │
+│       └── api/                         # Web layer (FastAPI)
+│           ├── main.py                  # Application entry point
+│           ├── schemas.py               # Pydantic request/response models
+│           └── routes/                  # API endpoints
+│               └── health.py            # Health check endpoints
+│
+├── tests/                               # Test suite
+├── scripts/                             # CLI utilities
+├── alembic/                             # Database migrations
+├── infrastructure/gcp/                  # Terraform IaC for GCP
+├── data/golden_set/                     # Test cases
+├── documentation/                       # Additional documentation
 ├── docker-compose.yml
 ├── Dockerfile
 └── pyproject.toml
 ```
+
+### Architecture Layers
+
+The project follows clean architecture principles with clear dependency flow:
+
+```
+api → agent → rag → ingestion → infrastructure → core
+```
+
+Each layer only imports from layers below it, ensuring no circular dependencies.
 
 ## Risk Assessment Logic
 
@@ -159,13 +191,48 @@ Medical_Agent/
 pytest
 ```
 
+### Importing the Package
+
+The project uses the `src/` layout. All imports use the `medical_agent` namespace:
+
+```python
+# Core configuration and exceptions
+from medical_agent.core.config import settings
+from medical_agent.core.exceptions import AppException
+
+# Infrastructure services
+from medical_agent.infrastructure.azure_openai import get_openai_client
+from medical_agent.infrastructure.database.models import Paper, User
+
+# Ingestion pipeline
+from medical_agent.ingestion.pipeline import IngestionPipeline
+
+# RAG components
+from medical_agent.rag.retriever import MedicalPaperRetriever
+from medical_agent.rag.query_engine import create_query_engine
+
+# Agent workflow
+from medical_agent.agent.graph import run_medical_agent
+
+# API application
+from medical_agent.api.main import create_application
+```
+
+When running scripts outside the virtual environment, ensure `PYTHONPATH` includes the `src` directory:
+```bash
+PYTHONPATH=src python scripts/your_script.py
+```
+
 ### Code Quality
 ```bash
 # Linting
-ruff check .
+ruff check src/
 
 # Type checking
-mypy app
+mypy src/medical_agent
+
+# Format code
+ruff format src/
 ```
 
 ### Database Migrations

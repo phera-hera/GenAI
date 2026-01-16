@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.db.models import ChunkType
+from medical_agent.infrastructure.database.models import ChunkType
 
 # Test data
 SAMPLE_EMBEDDING = [0.1] * 1536  # 1536-dimensional vector
@@ -393,7 +393,7 @@ class TestVectorStoreIntegration:
             SearchQuery,
             VectorStore,
         )
-        from app.db.session import get_session_context
+        from medical_agent.infrastructure.database.session import get_session_context
 
         # This would require a real database and Azure OpenAI connection
         pass

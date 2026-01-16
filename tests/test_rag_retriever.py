@@ -17,8 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from llama_index.core.schema import NodeWithScore, TextNode
 
-from app.db.models import ChunkType
-from rag.retriever import (
+from medical_agent.infrastructure.database.models import ChunkType
+from medical_agent.rag.retriever import (
     MedicalPaperRetriever,
     MultiQueryRetriever,
     RerankStrategy,

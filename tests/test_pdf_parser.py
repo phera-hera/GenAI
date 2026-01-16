@@ -8,7 +8,7 @@ including section identification, table extraction, and metadata parsing.
 import pytest
 from unittest.mock import MagicMock, patch
 
-from ingestion.parsers import (
+from medical_agent.ingestion.parsers import (
     DocumentSection,
     ExtractedTable,
     MedicalPDFParser,

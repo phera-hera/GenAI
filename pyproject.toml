@@ -2,7 +2,7 @@
 name = "femtech-medical-rag-agent"
 version = "0.1.0"
 description = "A mobile-first diagnostic platform for women's vaginal health using RAG-based medical reasoning"
-readme = "README.md"
+#readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
@@ -78,7 +78,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["app", "agent", "ingestion", "rag", "evaluation"]
+packages = ["src/medical_agent"]
 
 [tool.ruff]
 target-version = "py311"
@@ -98,7 +98,7 @@ ignore = [
 ]
 
 [tool.ruff.isort]
-known-first-party = ["app", "agent", "ingestion", "rag"]
+known-first-party = ["medical_agent"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -109,6 +109,7 @@ plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+pythonpath = ["src"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]

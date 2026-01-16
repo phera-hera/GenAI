@@ -17,7 +17,7 @@ from alembic import context
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import application settings and models
-from app.core.config import settings
+from medical_agent.core.config import settings
 
 # This is the Alembic Config object
 config = context.config
@@ -31,8 +31,8 @@ config.set_main_option("sqlalchemy.url", settings.sync_database_connection_strin
 
 # Import the Base and all models for autogenerate support
 # This ensures all models are registered with the metadata
-from app.db.base import Base
-from app.db.models import (
+from medical_agent.infrastructure.database.base import Base
+from medical_agent.infrastructure.database.models import (
     ChunkType,
     HealthProfile,
     Paper,

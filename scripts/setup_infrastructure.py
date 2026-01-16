@@ -69,8 +69,8 @@ def check_gcp_configuration() -> dict:
     results = {"configured": False, "connected": False, "bucket_exists": False}
     
     try:
-        from app.core.config import settings
-        from app.services.gcp_storage import GCPStorageClient
+        from medical_agent.core.config import settings
+        from medical_agent.infrastructure.gcp_storage import GCPStorageClient
         
         client = GCPStorageClient()
         
@@ -113,8 +113,8 @@ def check_azure_openai_configuration() -> dict:
     }
     
     try:
-        from app.core.config import settings
-        from app.services.azure_openai import AzureOpenAIClient
+        from medical_agent.core.config import settings
+        from medical_agent.infrastructure.azure_openai import AzureOpenAIClient
         
         client = AzureOpenAIClient()
         
@@ -163,8 +163,8 @@ def check_llama_parser() -> dict:
     results = {"configured": False, "connected": False}
     
     try:
-        from app.core.config import settings
-        from app.services.llama_parser import LlamaParserClient
+        from medical_agent.core.config import settings
+        from medical_agent.infrastructure.llama_parser import LlamaParserClient
         
         client = LlamaParserClient()
         
@@ -203,8 +203,8 @@ def check_langfuse_configuration() -> dict:
     results = {"configured": False, "connected": False}
     
     try:
-        from app.core.config import settings
-        from app.services.langfuse_client import LangfuseClient
+        from medical_agent.core.config import settings
+        from medical_agent.infrastructure.langfuse_client import LangfuseClient
         
         client = LangfuseClient()
         
@@ -243,7 +243,7 @@ def check_database_configuration() -> dict:
     results = {"configured": False, "connected": False, "pgvector": False}
     
     try:
-        from app.core.config import settings
+        from medical_agent.core.config import settings
         
         # Check configuration
         print_status("Configuration", True)

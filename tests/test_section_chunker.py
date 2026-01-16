@@ -2,9 +2,9 @@
 Tests for section-based chunking of parsed medical papers.
 """
 
-from app.db.models import ChunkType
-from ingestion.chunkers import ChunkedSection, SectionChunker
-from ingestion.parsers import (
+from medical_agent.infrastructure.database.models import ChunkType
+from medical_agent.ingestion.chunkers import ChunkedSection, SectionChunker
+from medical_agent.ingestion.parsers import (
     DocumentSection,
     ExtractedTable,
     PaperMetadata,
