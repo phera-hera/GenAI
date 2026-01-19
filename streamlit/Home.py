@@ -101,12 +101,11 @@ else:
         
         Use the sidebar to navigate to:
         - **Test pH Analysis**: Test the medical agent with various scenarios
-        - **API Health**: Check API status and configuration
         
-        All features are designed to be simple and straightforward - no technical knowledge needed!
+        The interface is designed to be simple and straightforward - no technical knowledge needed!
         """)
         
-        st.info("💡 **Tip**: Start by checking the API Health page to ensure the system is running properly.")
+        st.info("💡 **Tip**: Go to 'Test pH Analysis' to start testing different health scenarios.")
         
     elif st.session_state.user_role == "admin":
         st.success("Welcome! You are in Admin Mode")
@@ -115,10 +114,10 @@ else:
         
         Use the sidebar to navigate to:
         - **Test pH Analysis**: Test the medical agent (same as user mode)
-        - **Paper Management**: Add, view, and delete research papers
-        - **API Health**: Monitor API status
+        - **Paper Management**: View and delete research papers
+        - **API Health**: Monitor API status and diagnostics
         
-        Admin access provides additional paper management capabilities.
+        Admin access provides paper management and system monitoring capabilities.
         """)
         
         st.warning("⚠️ **Admin Notice**: Paper deletion operations are permanent. Always verify before deleting.")

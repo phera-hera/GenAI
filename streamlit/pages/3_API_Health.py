@@ -20,6 +20,12 @@ if "user_role" not in st.session_state or st.session_state.user_role is None:
     st.warning("Please select your role from the Home page first.")
     st.stop()
 
+# Admin only page
+if st.session_state.user_role != "admin":
+    st.error("Access Denied: API Health monitoring is only available to administrators.")
+    st.info("Regular users don't need to worry about API health - if there's an issue, you'll see a clear error message when testing.")
+    st.stop()
+
 # Get API URL from session
 API_BASE_URL = st.session_state.get("api_base_url", "http://localhost:8000")
 
