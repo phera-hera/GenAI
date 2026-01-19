@@ -24,6 +24,7 @@ Quick start:
 
 # Parsers
 from .parsers import (
+    DoclingPDFParser,
     DocumentSection,
     ExtractedTable,
     FallbackPDFParser,
@@ -33,6 +34,7 @@ from .parsers import (
     PDFParserFacade,
     SectionType,
     TableCell,
+    get_docling_parser,
     get_fallback_parser,
     get_parser_facade,
     get_pdf_parser,
@@ -40,7 +42,24 @@ from .parsers import (
 )
 
 # Chunkers
-from .chunkers import ChunkedSection, SectionChunker
+from .chunkers import (
+    ChunkedSection,
+    DoclingHierarchicalChunker,
+    SectionChunker,
+    get_docling_chunker,
+)
+
+# Metadata extraction
+from .metadata import (
+    ExtractedMetadata,
+    MedicalMetadataExtractor,
+    MetadataLLMClient,
+    TableMetadata,
+    TermNormalizer,
+    get_metadata_extractor,
+    get_metadata_llm_client,
+    get_term_normalizer,
+)
 
 # Embedders
 from .embedders import (
@@ -78,10 +97,12 @@ __all__ = [
     "search_similar",
     # Parser classes
     "PDFParserFacade",
+    "DoclingPDFParser",
     "MedicalPDFParser",
     "FallbackPDFParser",
     # Factory functions
     "get_parser_facade",
+    "get_docling_parser",
     "get_pdf_parser",
     "get_fallback_parser",
     "get_embedder",
@@ -96,7 +117,18 @@ __all__ = [
     "SectionType",
     # Chunking
     "SectionChunker",
+    "DoclingHierarchicalChunker",
+    "get_docling_chunker",
     "ChunkedSection",
+    # Metadata extraction
+    "MedicalMetadataExtractor",
+    "MetadataLLMClient",
+    "TermNormalizer",
+    "ExtractedMetadata",
+    "TableMetadata",
+    "get_metadata_extractor",
+    "get_metadata_llm_client",
+    "get_term_normalizer",
     # Embedding
     "AzureEmbedder",
     "AsyncAzureEmbedder",

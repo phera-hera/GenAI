@@ -30,7 +30,7 @@ from medical_agent.core.exceptions import LLMError
 from medical_agent.infrastructure.azure_openai import AzureOpenAIClient, get_openai_client
 
 if TYPE_CHECKING:
-    from ingestion.chunkers import ChunkedSection
+    from medical_agent.ingestion.chunkers import ChunkedSection
 
 logger = logging.getLogger(__name__)
 
