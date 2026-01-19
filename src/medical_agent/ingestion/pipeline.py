@@ -2,10 +2,13 @@
 Ingestion Pipeline Orchestrator
 
 Provides the complete pipeline for processing medical research papers:
-1. Parse PDF using LlamaParser
-2. Chunk into semantic sections
-3. Generate embeddings using Azure OpenAI
-4. Store in pgvector for retrieval
+1. Parse PDF using Docling (vision-based, hierarchical)
+2. Extract medical metadata (ethnicities, diagnoses, symptoms)
+3. Normalize metadata terms to dropdown values
+4. Chunk into hierarchical sections with overlap
+5. Stamp metadata onto every chunk
+6. Generate embeddings using Azure OpenAI
+7. Store in pgvector for retrieval
 
 This module orchestrates all ingestion components and provides both
 synchronous and asynchronous interfaces.
@@ -28,8 +31,9 @@ from medical_agent.core.exceptions import DatabaseException, DocumentParsingErro
 from medical_agent.infrastructure.database.models import Paper
 from medical_agent.infrastructure.database.session import get_session_context
 
-from .chunkers import ChunkedSection, SectionChunker
+from .chunkers import ChunkedSection, DoclingHierarchicalChunker, get_docling_chunker
 from .embedders import AsyncAzureEmbedder, EmbeddedChunk, EmbeddingResult, get_async_embedder
+from .metadata import ExtractedMetadata, MedicalMetadataExtractor, get_metadata_extractor
 from .parsers import ParsedDocument, parse_pdf
 from .storage import SearchQuery, SearchResult, StorageResult, VectorStore, get_vector_store
 
@@ -42,7 +46,13 @@ class PipelineConfig:
 
     # Chunking settings
     max_chunk_chars: int = 1200
+    chunk_overlap_chars: int = 200
     include_tables: bool = True
+    respect_section_boundaries: bool = True
+
+    # Metadata extraction settings
+    extract_metadata: bool = True
+    extract_table_summaries: bool = True
 
     # Embedding settings
     embedding_batch_size: int = 50
@@ -106,13 +116,14 @@ class IngestionPipeline:
     """
     Complete ingestion pipeline for medical research papers.
 
-    Orchestrates parsing, chunking, embedding, and storage of PDFs
-    into the vector database.
+    Orchestrates parsing, metadata extraction, chunking, embedding, and storage
+    of PDFs into the vector database.
 
     Args:
         config: Pipeline configuration
         embedder: Optional AsyncAzureEmbedder (creates one if not provided)
         vector_store: Optional VectorStore (creates one if not provided)
+        metadata_extractor: Optional MedicalMetadataExtractor (creates one if not provided)
     """
 
     def __init__(
@@ -120,13 +131,19 @@ class IngestionPipeline:
         config: PipelineConfig | None = None,
         embedder: AsyncAzureEmbedder | None = None,
         vector_store: VectorStore | None = None,
+        metadata_extractor: MedicalMetadataExtractor | None = None,
     ):
         self.config = config or PipelineConfig()
         self.embedder = embedder or get_async_embedder()
         self.vector_store = vector_store or get_vector_store()
-        self.chunker = SectionChunker(
+        self.metadata_extractor = metadata_extractor or get_metadata_extractor()
+
+        # Use Docling hierarchical chunker
+        self.chunker = DoclingHierarchicalChunker(
             max_chunk_chars=self.config.max_chunk_chars,
+            overlap_chars=self.config.chunk_overlap_chars,
             include_tables=self.config.include_tables,
+            respect_section_boundaries=self.config.respect_section_boundaries,
         )
 
     def compute_file_hash(self, content: bytes) -> str:
@@ -218,7 +235,34 @@ class IngestionPipeline:
             if progress_callback:
                 progress_callback("parse", 100)
 
-            # Stage 2: Chunk document
+            # Stage 2: Extract metadata
+            extracted_metadata: ExtractedMetadata | None = None
+            if self.config.extract_metadata:
+                if progress_callback:
+                    progress_callback("metadata", 0)
+
+                metadata_start = time.monotonic()
+                try:
+                    extracted_metadata = await self.metadata_extractor.extract(
+                        parsed=parsed,
+                        extract_table_summaries=self.config.extract_table_summaries,
+                    )
+                    logger.info(
+                        f"Extracted metadata with {sum(len(getattr(extracted_metadata, field)) for field in ['ethnicities', 'diagnoses', 'symptoms', 'menstrual_status', 'birth_control', 'hormone_therapy', 'fertility_treatments'])} terms"
+                    )
+                except Exception as e:
+                    logger.warning(f"Metadata extraction failed: {e}")
+                    extracted_metadata = ExtractedMetadata()  # Empty metadata
+                finally:
+                    metadata_time_ms = int((time.monotonic() - metadata_start) * 1000)
+                    logger.debug(f"Metadata extraction took {metadata_time_ms}ms")
+
+                if progress_callback:
+                    progress_callback("metadata", 100)
+            else:
+                extracted_metadata = ExtractedMetadata()  # Empty metadata
+
+            # Stage 3: Chunk document
             if progress_callback:
                 progress_callback("chunk", 0)
 
@@ -227,6 +271,11 @@ class IngestionPipeline:
                 chunks = self.chunker.chunk_document(parsed)
                 result.chunked = True
                 result.chunk_count = len(chunks)
+
+                # Stage 3.5: Stamp metadata onto every chunk
+                if extracted_metadata:
+                    self._stamp_metadata_on_chunks(chunks, extracted_metadata)
+
             except Exception as e:
                 logger.error(f"Chunking failed: {e}")
                 result.errors.append(f"Chunk error: {e}")
@@ -241,7 +290,7 @@ class IngestionPipeline:
                 result.errors.append("No chunks generated from document")
                 return result
 
-            # Stage 3: Generate embeddings
+            # Stage 4: Generate embeddings
             if progress_callback:
                 progress_callback("embed", 0)
 
@@ -272,7 +321,7 @@ class IngestionPipeline:
                 result.errors.append("No chunks were successfully embedded")
                 return result
 
-            # Stage 4: Store in database
+            # Stage 5: Store in database
             if progress_callback:
                 progress_callback("store", 0)
 
@@ -324,6 +373,58 @@ class IngestionPipeline:
 
         logger.info(result.summary())
         return result
+
+    def _stamp_metadata_on_chunks(
+        self,
+        chunks: list[ChunkedSection],
+        metadata: ExtractedMetadata,
+    ) -> None:
+        """
+        Stamp extracted metadata onto every chunk.
+
+        Adds the complete metadata structure to chunk_metadata, including:
+        - All 7 medical categories (empty arrays if not found)
+        - Age information
+        - Table summaries (only for table chunks)
+        - Confidence score
+
+        Args:
+            chunks: List of chunks to stamp metadata onto
+            metadata: Extracted and normalized metadata
+        """
+        # Convert metadata to dict for storage
+        metadata_dict = metadata.to_dict()
+
+        for chunk in chunks:
+            # Start with existing chunk_metadata
+            chunk_metadata = chunk.chunk_metadata.copy()
+
+            # Add extracted metadata (all categories, even if empty)
+            chunk_metadata.update({
+                "extracted_metadata": {
+                    "ethnicities": metadata.ethnicities,
+                    "diagnoses": metadata.diagnoses,
+                    "symptoms": metadata.symptoms,
+                    "menstrual_status": metadata.menstrual_status,
+                    "birth_control": metadata.birth_control,
+                    "hormone_therapy": metadata.hormone_therapy,
+                    "fertility_treatments": metadata.fertility_treatments,
+                    "age_mentioned": metadata.age_mentioned,
+                    "age_range": metadata.age_range,
+                    "confidence": metadata.confidence,
+                }
+            })
+
+            # Add table summary if this is a table chunk
+            if chunk.chunk_type.value == "table":
+                table_id = chunk_metadata.get("table_id")
+                if table_id and table_id in metadata.table_summaries:
+                    chunk_metadata["table_summary"] = metadata.table_summaries[table_id]
+
+            # Update chunk metadata
+            chunk.chunk_metadata = chunk_metadata
+
+        logger.debug(f"Stamped metadata onto {len(chunks)} chunks")
 
     async def _upsert_paper(
         self,

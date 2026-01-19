@@ -26,6 +26,7 @@ from medical_agent.core.config import settings
 from medical_agent.core.exceptions import DatabaseException
 from medical_agent.infrastructure.database.models import ChunkType, Paper, PaperChunk
 from medical_agent.infrastructure.database.session import get_session_context
+from medical_agent.ingestion.storage.metadata_filters import build_metadata_filters, format_metadata_filters
 
 if TYPE_CHECKING:
     from ingestion.embedders.azure_embedder import EmbeddedChunk
@@ -77,6 +78,16 @@ class SearchQuery:
     chunk_types: list[ChunkType] | None = None
     min_score: float | None = None
     include_paper_metadata: bool = True
+
+    # Medical metadata filters (NEW!)
+    # Filter chunks by extracted medical metadata
+    filter_ethnicities: list[str] | None = None
+    filter_diagnoses: list[str] | None = None
+    filter_symptoms: list[str] | None = None
+    filter_menstrual_status: list[str] | None = None
+    filter_birth_control: list[str] | None = None
+    filter_hormone_therapy: list[str] | None = None
+    filter_fertility_treatments: list[str] | None = None
 
 
 @dataclass
@@ -306,6 +317,31 @@ class VectorStore:
                 type_values = [ct.value for ct in query.chunk_types]
                 stmt = stmt.where(PaperChunk.chunk_type.in_(type_values))
 
+            # Apply medical metadata filters (NEW!)
+            metadata_filters = build_metadata_filters(
+                filter_ethnicities=query.filter_ethnicities,
+                filter_diagnoses=query.filter_diagnoses,
+                filter_symptoms=query.filter_symptoms,
+                filter_menstrual_status=query.filter_menstrual_status,
+                filter_birth_control=query.filter_birth_control,
+                filter_hormone_therapy=query.filter_hormone_therapy,
+                filter_fertility_treatments=query.filter_fertility_treatments,
+            )
+
+            if metadata_filters:
+                stmt = stmt.where(and_(*metadata_filters))
+                logger.debug(
+                    f"Applied metadata filters: {format_metadata_filters(
+                        filter_ethnicities=query.filter_ethnicities,
+                        filter_diagnoses=query.filter_diagnoses,
+                        filter_symptoms=query.filter_symptoms,
+                        filter_menstrual_status=query.filter_menstrual_status,
+                        filter_birth_control=query.filter_birth_control,
+                        filter_hormone_therapy=query.filter_hormone_therapy,
+                        filter_fertility_treatments=query.filter_fertility_treatments,
+                    )}"
+                )
+
             # Order by similarity and limit
             if query.distance_metric in ("cosine", "l2"):
                 # For cosine and L2, we order by distance (ascending)
@@ -376,6 +412,14 @@ class VectorStore:
         paper_ids: list[uuid.UUID] | None = None,
         chunk_types: list[ChunkType] | None = None,
         include_paper_metadata: bool = True,
+        # Medical metadata filters (NEW!)
+        filter_ethnicities: list[str] | None = None,
+        filter_diagnoses: list[str] | None = None,
+        filter_symptoms: list[str] | None = None,
+        filter_menstrual_status: list[str] | None = None,
+        filter_birth_control: list[str] | None = None,
+        filter_hormone_therapy: list[str] | None = None,
+        filter_fertility_treatments: list[str] | None = None,
     ) -> list[SearchResult]:
         """
         Perform BM25 full-text search using PostgreSQL's tsvector/tsquery.
@@ -387,6 +431,13 @@ class VectorStore:
             paper_ids: Optional filter by paper IDs
             chunk_types: Optional filter by chunk types
             include_paper_metadata: Whether to fetch paper metadata
+            filter_ethnicities: Filter by ethnicity values
+            filter_diagnoses: Filter by diagnosis values
+            filter_symptoms: Filter by symptom values
+            filter_menstrual_status: Filter by menstrual status values
+            filter_birth_control: Filter by birth control types
+            filter_hormone_therapy: Filter by hormone therapy types
+            filter_fertility_treatments: Filter by fertility treatment types
 
         Returns:
             List of SearchResult sorted by text relevance
@@ -420,6 +471,31 @@ class VectorStore:
             if chunk_types:
                 type_values = [ct.value for ct in chunk_types]
                 stmt = stmt.where(PaperChunk.chunk_type.in_(type_values))
+
+            # Apply medical metadata filters (NEW!)
+            metadata_filters = build_metadata_filters(
+                filter_ethnicities=filter_ethnicities,
+                filter_diagnoses=filter_diagnoses,
+                filter_symptoms=filter_symptoms,
+                filter_menstrual_status=filter_menstrual_status,
+                filter_birth_control=filter_birth_control,
+                filter_hormone_therapy=filter_hormone_therapy,
+                filter_fertility_treatments=filter_fertility_treatments,
+            )
+
+            if metadata_filters:
+                stmt = stmt.where(and_(*metadata_filters))
+                logger.debug(
+                    f"BM25 search with metadata filters: {format_metadata_filters(
+                        filter_ethnicities=filter_ethnicities,
+                        filter_diagnoses=filter_diagnoses,
+                        filter_symptoms=filter_symptoms,
+                        filter_menstrual_status=filter_menstrual_status,
+                        filter_birth_control=filter_birth_control,
+                        filter_hormone_therapy=filter_hormone_therapy,
+                        filter_fertility_treatments=filter_fertility_treatments,
+                    )}"
+                )
 
             # Order by relevance and limit
             stmt = stmt.order_by(rank_expr.desc()).limit(top_k)

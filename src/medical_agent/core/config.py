@@ -93,16 +93,23 @@ class Settings(BaseSettings):
     )
 
     # -------------------------------------------------------------------------
-    # LlamaParser Settings (LVM Mode with Azure OpenAI)
+    # Docling Parser Settings
+    # -------------------------------------------------------------------------
+    docling_enable_ocr: bool = Field(default=True, description="Enable hybrid OCR for scanned papers")
+
+    # -------------------------------------------------------------------------
+    # LlamaParser Settings (DEPRECATED - use Docling)
     # -------------------------------------------------------------------------
     # LlamaParser now uses LVM mode with your Azure OpenAI GPT-4o model
     # No separate API key needed - uses Azure OpenAI credentials
+    # DEPRECATED: Use Docling instead
     llama_cloud_api_key: str = Field(default="")  # Deprecated, kept for backward compat
 
     def is_llama_parser_configured(self) -> bool:
         """
         Check if LlamaParser LVM mode is properly configured.
 
+        DEPRECATED: Use Docling instead.
         LVM mode requires Azure OpenAI to be configured (same as medical reasoning).
         """
         return bool(
@@ -134,6 +141,19 @@ class Settings(BaseSettings):
     langfuse_public_key: str = Field(default="")
     langfuse_secret_key: str = Field(default="")
     langfuse_host: str = Field(default="https://cloud.langfuse.com")
+
+    # -------------------------------------------------------------------------
+    # Metadata Extraction Settings
+    # -------------------------------------------------------------------------
+    metadata_extraction_enabled: bool = Field(default=True, description="Enable LLM-based metadata extraction")
+    metadata_extraction_model: str = Field(default="gpt-4o", description="Model for metadata extraction (GPT-4o for accuracy)")
+    metadata_extraction_confidence_threshold: float = Field(default=0.7, description="Minimum confidence for extracted metadata")
+
+    # -------------------------------------------------------------------------
+    # Chunking Settings
+    # -------------------------------------------------------------------------
+    chunk_overlap_chars: int = Field(default=200, description="Overlap between chunks for context preservation")
+    respect_section_boundaries: bool = Field(default=True, description="Don't split sections mid-concept")
 
     # -------------------------------------------------------------------------
     # Vector Search Settings

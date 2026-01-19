@@ -75,6 +75,15 @@ class RetrievalConfig:
     paper_ids: list[uuid.UUID] | None = None
     exclude_paper_ids: list[uuid.UUID] | None = None
 
+    # Medical metadata filtering (NEW!)
+    filter_ethnicities: list[str] | None = None
+    filter_diagnoses: list[str] | None = None
+    filter_symptoms: list[str] | None = None
+    filter_menstrual_status: list[str] | None = None
+    filter_birth_control: list[str] | None = None
+    filter_hormone_therapy: list[str] | None = None
+    filter_fertility_treatments: list[str] | None = None
+
     # Reranking (applied after fusion)
     rerank_strategy: RerankStrategy = RerankStrategy.NONE
     chunk_type_boosts: dict[ChunkType, float] | None = None
@@ -261,6 +270,14 @@ class MedicalPaperRetriever(BaseRetriever):
             chunk_types=self.config.chunk_types,
             min_score=self.config.similarity_threshold,
             include_paper_metadata=self.config.include_paper_metadata,
+            # Medical metadata filters (NEW!)
+            filter_ethnicities=self.config.filter_ethnicities,
+            filter_diagnoses=self.config.filter_diagnoses,
+            filter_symptoms=self.config.filter_symptoms,
+            filter_menstrual_status=self.config.filter_menstrual_status,
+            filter_birth_control=self.config.filter_birth_control,
+            filter_hormone_therapy=self.config.filter_hormone_therapy,
+            filter_fertility_treatments=self.config.filter_fertility_treatments,
         )
 
         # Execute search
@@ -284,6 +301,14 @@ class MedicalPaperRetriever(BaseRetriever):
                 paper_ids=self.config.paper_ids,
                 chunk_types=self.config.chunk_types,
                 include_paper_metadata=self.config.include_paper_metadata,
+                # Medical metadata filters (NEW!)
+                filter_ethnicities=self.config.filter_ethnicities,
+                filter_diagnoses=self.config.filter_diagnoses,
+                filter_symptoms=self.config.filter_symptoms,
+                filter_menstrual_status=self.config.filter_menstrual_status,
+                filter_birth_control=self.config.filter_birth_control,
+                filter_hormone_therapy=self.config.filter_hormone_therapy,
+                filter_fertility_treatments=self.config.filter_fertility_treatments,
             )
         else:
             async with get_session_context() as session:
@@ -294,6 +319,14 @@ class MedicalPaperRetriever(BaseRetriever):
                     paper_ids=self.config.paper_ids,
                     chunk_types=self.config.chunk_types,
                     include_paper_metadata=self.config.include_paper_metadata,
+                    # Medical metadata filters (NEW!)
+                    filter_ethnicities=self.config.filter_ethnicities,
+                    filter_diagnoses=self.config.filter_diagnoses,
+                    filter_symptoms=self.config.filter_symptoms,
+                    filter_menstrual_status=self.config.filter_menstrual_status,
+                    filter_birth_control=self.config.filter_birth_control,
+                    filter_hormone_therapy=self.config.filter_hormone_therapy,
+                    filter_fertility_treatments=self.config.filter_fertility_treatments,
                 )
 
     async def _hybrid_search(

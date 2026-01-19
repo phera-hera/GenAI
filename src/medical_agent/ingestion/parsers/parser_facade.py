@@ -5,8 +5,9 @@ Provides a unified interface for PDF parsing that automatically
 selects the best available parser based on configuration.
 
 Priority:
-1. LlamaParser (primary - better quality)
+1. Docling (primary - vision-based with hierarchical structure)
 2. PyMuPDF fallback (offline, basic extraction)
+3. LlamaParser (deprecated, fallback)
 """
 
 import logging
@@ -15,6 +16,7 @@ from typing import Protocol
 from medical_agent.core.config import settings
 
 from .document_result import ParsedDocument
+from .docling_parser import DoclingPDFParser, get_docling_parser
 from .fallback_parser import FallbackPDFParser, get_fallback_parser
 from .pdf_parser import MedicalPDFParser, get_pdf_parser
 
@@ -23,11 +25,11 @@ logger = logging.getLogger(__name__)
 
 class PDFParserProtocol(Protocol):
     """Protocol defining the PDF parser interface."""
-    
+
     def is_available(self) -> bool:
         """Check if the parser is available."""
         ...
-    
+
     def parse(
         self,
         pdf_content: bytes,
@@ -41,77 +43,87 @@ class PDFParserProtocol(Protocol):
 class PDFParserFacade:
     """
     Unified PDF parser that selects the best available parser.
-    
-    Automatically chooses between LlamaParser
-    and PyMuPDF based on availability and configuration.
-    
+
+    Automatically chooses between Docling (primary), PyMuPDF (fallback),
+    and LlamaParser (deprecated) based on availability and configuration.
+
     Usage:
         parser = PDFParserFacade()
         result = parser.parse(pdf_bytes, source_file="paper.pdf")
     """
-    
+
     def __init__(
         self,
-        prefer_llama_parser: bool = True,
+        prefer_docling: bool = True,
         allow_fallback: bool = True,
     ):
         """
         Initialize the parser facade.
-        
+
         Args:
-            prefer_llama_parser: Whether to prefer LlamaParser over fallback
+            prefer_docling: Whether to prefer Docling over other parsers
             allow_fallback: Whether to allow fallback parser
         """
-        self.prefer_llama_parser = prefer_llama_parser
+        self.prefer_docling = prefer_docling
         self.allow_fallback = allow_fallback
-        
+
+        self._docling_parser: DoclingPDFParser | None = None
         self._llama_parser: MedicalPDFParser | None = None
         self._fallback_parser: FallbackPDFParser | None = None
-    
+
+    @property
+    def docling_parser(self) -> DoclingPDFParser:
+        """Get the Docling parser instance."""
+        if self._docling_parser is None:
+            self._docling_parser = get_docling_parser()
+        return self._docling_parser
+
     @property
     def llama_parser(self) -> MedicalPDFParser:
-        """Get the LlamaParser instance."""
+        """Get the LlamaParser instance (deprecated)."""
         if self._llama_parser is None:
             self._llama_parser = get_pdf_parser()
         return self._llama_parser
-    
+
     @property
     def fallback_parser(self) -> FallbackPDFParser:
         """Get the fallback parser instance."""
         if self._fallback_parser is None:
             self._fallback_parser = get_fallback_parser()
         return self._fallback_parser
-    
+
     def get_available_parser(self) -> PDFParserProtocol | None:
         """
         Get the best available parser.
-        
+
         Returns:
             The best available parser, or None if none available
         """
-        # Check LlamaParser first if preferred
-        if self.prefer_llama_parser and self.llama_parser.is_available():
-            return self.llama_parser
-        
-        # Try fallback
+        # Check Docling first if preferred
+        if self.prefer_docling and self.docling_parser.is_available():
+            return self.docling_parser
+
+        # Try PyMuPDF fallback
         if self.allow_fallback and self.fallback_parser.is_available():
             return self.fallback_parser
-        
-        # If not preferring LlamaParser, try it as last resort
-        if not self.prefer_llama_parser and self.llama_parser.is_available():
+
+        # Try LlamaParser as last resort (deprecated)
+        if self.llama_parser.is_available():
             return self.llama_parser
-        
+
         return None
-    
+
     def is_available(self) -> bool:
         """Check if any parser is available."""
         return self.get_available_parser() is not None
-    
+
     def get_parser_name(self) -> str:
         """Get the name of the parser that will be used."""
         parser = self.get_available_parser()
         if parser is None:
             return "none"
+        if isinstance(parser, DoclingPDFParser):
+            return "docling"
         if isinstance(parser, MedicalPDFParser):
             return "llama_parser"
         if isinstance(parser, FallbackPDFParser):
@@ -127,7 +139,7 @@ class PDFParserFacade:
         """
         Parse a PDF document using the best available parser.
 
-        Automatically falls back to PyMuPDF if LlamaParser fails.
+        Automatically falls back to PyMuPDF if Docling fails.
 
         Args:
             pdf_content: PDF file content as bytes
@@ -137,16 +149,17 @@ class PDFParserFacade:
         Returns:
             ParsedDocument with extracted content
         """
-        from .document_result import PaperMetadata
         from datetime import datetime, timezone
 
-        # Try LlamaParser first if available
-        if self.llama_parser.is_available():
-            parser_name = "llama_parser"
+        from .document_result import PaperMetadata
+
+        # Try Docling first if available
+        if self.docling_parser.is_available():
+            parser_name = "docling"
             logger.info(f"Using {parser_name} parser for: {source_file or 'unknown'}")
 
             try:
-                result = self.llama_parser.parse(
+                result = self.docling_parser.parse(
                     pdf_content=pdf_content,
                     source_file=source_file,
                     extract_metadata=extract_metadata,
@@ -158,14 +171,14 @@ class PDFParserFacade:
 
                 # If failed but no fallback allowed, return the failed result
                 if not self.allow_fallback:
-                    logger.warning(f"LlamaParser parsing failed and no fallback allowed")
+                    logger.warning(f"Docling parsing failed and no fallback allowed")
                     return result
 
                 # Otherwise fall through to try fallback
-                logger.warning(f"LlamaParser parsing failed, attempting fallback parser")
+                logger.warning(f"Docling parsing failed, attempting fallback parser")
 
             except Exception as e:
-                logger.warning(f"LlamaParser failed with error: {e}")
+                logger.warning(f"Docling failed with error: {e}")
                 if not self.allow_fallback:
                     raise
 
@@ -192,8 +205,8 @@ class PDFParserFacade:
             full_text="",
             is_successful=False,
             parsing_errors=[
-                "No PDF parser available. Configure LlamaParser "
-                "or install PyMuPDF (pip install pymupdf) for fallback."
+                "No PDF parser available. Install Docling (pip install docling) "
+                "or PyMuPDF (pip install pymupdf) for fallback."
             ],
             metadata=PaperMetadata(
                 source_file=source_file,
@@ -201,6 +214,38 @@ class PDFParserFacade:
             ),
         )
     
+    def parse_with_docling(
+        self,
+        pdf_content: bytes,
+        source_file: str | None = None,
+        extract_metadata: bool = True,
+    ) -> ParsedDocument:
+        """
+        Parse using Docling specifically.
+
+        Args:
+            pdf_content: PDF file content as bytes
+            source_file: Optional source file path
+            extract_metadata: Whether to extract metadata
+
+        Returns:
+            ParsedDocument with extracted content
+
+        Raises:
+            RuntimeError: If Docling is not available
+        """
+        if not self.docling_parser.is_available():
+            raise RuntimeError(
+                "Docling is not available. "
+                "Install with: pip install docling docling-core"
+            )
+
+        return self.docling_parser.parse(
+            pdf_content=pdf_content,
+            source_file=source_file,
+            extract_metadata=extract_metadata,
+        )
+
     def parse_with_llama_parser(
         self,
         pdf_content: bytes,
@@ -208,25 +253,28 @@ class PDFParserFacade:
         extract_metadata: bool = True,
     ) -> ParsedDocument:
         """
-        Parse using LlamaParser specifically.
-        
+        Parse using LlamaParser specifically (deprecated).
+
+        DEPRECATED: Use parse_with_docling() instead.
+
         Args:
             pdf_content: PDF file content as bytes
             source_file: Optional source file path
             extract_metadata: Whether to extract metadata
-            
+
         Returns:
             ParsedDocument with extracted content
-            
+
         Raises:
             RuntimeError: If LlamaParser is not available
         """
+        logger.warning("parse_with_llama_parser is deprecated. Use parse_with_docling instead.")
         if not self.llama_parser.is_available():
             raise RuntimeError(
                 "LlamaParser is not configured. "
                 "Set LLAMA_CLOUD_API_KEY environment variable."
             )
-        
+
         return self.llama_parser.parse(
             pdf_content=pdf_content,
             source_file=source_file,

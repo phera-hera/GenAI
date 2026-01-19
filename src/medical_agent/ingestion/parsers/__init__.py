@@ -1,12 +1,13 @@
 """
 Document Parsers for Medical Research Papers
 
-Provides PDF parsing capabilities using LlamaParser (LlamaCloud)
-as the primary parser, with a PyMuPDF fallback for offline use.
+Provides PDF parsing capabilities using Docling (vision-based)
+as the primary parser, with PyMuPDF fallback and deprecated LlamaParser.
 
 Main components:
-- MedicalPDFParser: Primary parser using LlamaParser
+- DoclingPDFParser: Primary parser using Docling (vision-based, hierarchical)
 - FallbackPDFParser: Backup parser using PyMuPDF (offline capable)
+- MedicalPDFParser: Deprecated LlamaParser (legacy)
 - PDFParserFacade: Unified interface that auto-selects best parser
 - ParsedDocument: Structured representation of parsed papers
 - ExtractedTable: Table data with markdown export
@@ -14,11 +15,12 @@ Main components:
 
 Quick start:
     from ingestion.parsers import parse_pdf
-    
+
     result = parse_pdf(pdf_bytes, source_file="paper.pdf")
     print(result.summary())
 """
 
+from .docling_parser import DoclingPDFParser, get_docling_parser
 from .document_result import (
     DocumentSection,
     ExtractedTable,
@@ -37,7 +39,10 @@ __all__ = [
     # Parser facade
     "PDFParserFacade",
     "get_parser_facade",
-    # Main parser
+    # Primary parser (Docling)
+    "DoclingPDFParser",
+    "get_docling_parser",
+    # Legacy parser (deprecated)
     "MedicalPDFParser",
     "get_pdf_parser",
     # Fallback parser

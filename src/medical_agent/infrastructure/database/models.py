@@ -309,7 +309,14 @@ class PaperChunk(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         JSONB,
         nullable=True,
         default=dict,
-        comment="Additional chunk metadata (e.g., table structure)",
+        comment=(
+            "Chunk metadata including: "
+            "1) Structural metadata (section_type, table_id, page_number), "
+            "2) Extracted medical metadata (extracted_metadata with ethnicities, diagnoses, symptoms, "
+            "menstrual_status, birth_control, hormone_therapy, fertility_treatments, age_mentioned, "
+            "age_range, confidence), "
+            "3) Table summary (table_summary - one sentence for table chunks)"
+        ),
     )
 
     # Relationships
