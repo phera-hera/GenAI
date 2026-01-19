@@ -176,9 +176,12 @@ Be specific about what the table contains, not what it might show or conclude.""
     def client(self) -> AsyncAzureOpenAI:
         """Get or create the Azure OpenAI client."""
         if self._client is None:
-            from medical_agent.infrastructure.azure_openai import get_azure_openai_client
-
-            self._client = get_azure_openai_client()
+            # Create async client directly using settings
+            self._client = AsyncAzureOpenAI(
+                api_key=settings.azure_openai_api_key,
+                api_version=settings.azure_openai_api_version,
+                azure_endpoint=settings.azure_openai_endpoint,
+            )
         return self._client
 
     async def extract_metadata(

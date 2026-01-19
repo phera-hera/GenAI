@@ -7,6 +7,8 @@ ADMIN ONLY - Manage research papers in the system.
 import asyncio
 import uuid
 import streamlit as st
+import requests
+from typing import List, Dict, Any
 
 try:
     from medical_agent.core.paper_manager import PaperManager
@@ -59,13 +61,31 @@ async def delete_paper(paper_id: str, delete_from_gcp: bool = True):
         )
 
 
-# Main UI
+# Professional styling
+st.markdown("""
+<style>
+    .success-box {
+        background: #d4edda;
+        padding: 0.75rem;
+        border-radius: 4px;
+        border-left: 4px solid #28a745;
+        margin: 0.5rem 0;
+    }
+    .info-box {
+        background: #d1ecf1;
+        padding: 0.75rem;
+        border-radius: 4px;
+        border-left: 4px solid #17a2b8;
+        margin: 0.5rem 0;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("Paper Management")
-st.markdown("Manage research papers in the medical agent database")
 st.markdown("---")
 
 # Navigation tabs
-tab1, tab2, tab3 = st.tabs(["View All Papers", "Delete Paper", "Bulk Operations"])
+tab1, tab2, tab3, tab4 = st.tabs(["View All Papers", "Delete Paper", "Bulk Operations", "Ingest Papers"])
 
 # TAB 1: View All Papers
 with tab1:
@@ -329,6 +349,279 @@ with tab3:
     
     except Exception as e:
         st.error(f"Error loading papers: {str(e)}")
+
+# TAB 4: Ingest Papers
+with tab4:
+    st.header("Ingest Papers from GCP")
+
+    API_BASE_URL = st.session_state.get("api_base_url", "http://localhost:8000")
+
+    st.markdown("""
+    Upload PDFs to your GCP bucket, then use this interface to ingest them into the database.
+    The system will parse PDFs, extract metadata, chunk content, and create embeddings.
+    """)
+
+    st.markdown("---")
+
+    # Section 1: List Available Papers
+    st.subheader("1. List Papers from GCP Bucket")
+
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        list_button = st.button("List Papers from GCP", use_container_width=True, type="primary")
+
+    if list_button:
+        try:
+            with st.spinner("Fetching papers from GCP bucket..."):
+                response = requests.post(
+                    f"{API_BASE_URL}/api/v1/ingest",
+                    json={"list_bucket": True},
+                    timeout=30
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    available_papers = result.get("available_papers", [])
+
+                    if not available_papers:
+                        st.info("No papers found in GCP bucket")
+                    else:
+                        # Get currently ingested papers
+                        try:
+                            ingested_papers = asyncio.run(fetch_all_papers())
+                            ingested_titles = {p['title'] for p in ingested_papers}
+                        except:
+                            ingested_titles = set()
+
+                        # Categorize papers
+                        new_papers = []
+                        existing_papers = []
+
+                        for paper in available_papers:
+                            paper_name = paper.get("name", "")
+                            # Simple check - just filename matching
+                            if any(paper_name in title or title in paper_name for title in ingested_titles):
+                                existing_papers.append(paper)
+                            else:
+                                new_papers.append(paper)
+
+                        st.success(f"Found {len(available_papers)} paper(s) in GCP bucket")
+
+                        # Display new papers
+                        if new_papers:
+                            st.markdown(f"**New Papers ({len(new_papers)})** - Not yet ingested")
+                            new_paper_data = []
+                            for p in new_papers:
+                                new_paper_data.append({
+                                    "Filename": p.get("name", ""),
+                                    "Size": f"{p.get('size', 0) / 1024:.1f} KB",
+                                    "Status": "✓ Ready to ingest"
+                                })
+                            st.dataframe(new_paper_data, use_container_width=True)
+
+                        # Display already ingested
+                        if existing_papers:
+                            with st.expander(f"Already Ingested ({len(existing_papers)})"):
+                                existing_paper_data = []
+                                for p in existing_papers:
+                                    existing_paper_data.append({
+                                        "Filename": p.get("name", ""),
+                                        "Size": f"{p.get('size', 0) / 1024:.1f} KB",
+                                        "Status": "Already in database"
+                                    })
+                                st.dataframe(existing_paper_data, use_container_width=True)
+
+                        # Store papers in session state for ingestion
+                        st.session_state["available_papers"] = available_papers
+                        st.session_state["new_papers"] = [p.get("path") for p in new_papers]
+
+                else:
+                    st.error(f"API Error: {response.status_code}")
+                    try:
+                        st.json(response.json())
+                    except:
+                        st.text(response.text)
+
+        except requests.exceptions.ConnectionError:
+            st.error("Connection Error: Could not connect to the API")
+        except requests.exceptions.Timeout:
+            st.error("Timeout Error: Request took too long")
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
+
+    # Section 2: Ingest Papers
+    if "available_papers" in st.session_state and st.session_state.get("new_papers"):
+        st.markdown("---")
+        st.subheader("2. Ingest Papers")
+
+        available_papers = st.session_state["available_papers"]
+        new_papers = st.session_state["new_papers"]
+
+        # Option 1: Ingest all new papers
+        st.markdown("**Option 1: Ingest All New Papers**")
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            ingest_all_button = st.button(
+                f"Ingest All ({len(new_papers)} papers)",
+                use_container_width=True,
+                type="primary"
+            )
+
+        # Option 2: Select specific papers
+        st.markdown("**Option 2: Select Specific Papers**")
+        paper_options = {p.get("name", ""): p.get("path", "") for p in available_papers}
+
+        selected_papers = st.multiselect(
+            "Select papers to ingest:",
+            options=list(paper_options.keys())
+        )
+
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            ingest_selected_button = st.button(
+                f"Ingest Selected ({len(selected_papers)} papers)",
+                use_container_width=True,
+                disabled=len(selected_papers) == 0
+            )
+
+        # Dry run option
+        dry_run = st.checkbox(
+            "Dry Run (validate without storing)",
+            help="Test ingestion without saving to database"
+        )
+
+        # Process ingestion
+        if ingest_all_button or ingest_selected_button:
+            # Determine which papers to ingest
+            if ingest_all_button:
+                paths_to_ingest = new_papers
+            else:
+                paths_to_ingest = [paper_options[name] for name in selected_papers]
+
+            st.markdown("---")
+            st.subheader("Ingestion Progress")
+
+            try:
+                # Prepare request
+                request_data = {
+                    "gcp_paths": paths_to_ingest,
+                    "dry_run": dry_run
+                }
+
+                # Show request payload for debugging
+                with st.expander("Request Payload (Admin Debug)"):
+                    st.json(request_data)
+
+                # Make API call
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+
+                status_text.text("Starting ingestion...")
+
+                response = requests.post(
+                    f"{API_BASE_URL}/api/v1/ingest",
+                    json=request_data,
+                    timeout=300  # 5 minutes timeout
+                )
+
+                progress_bar.progress(100)
+
+                if response.status_code == 200:
+                    result = response.json()
+
+                    # Display results
+                    st.success("Ingestion Complete!" if not dry_run else "Dry Run Complete!")
+
+                    # Summary metrics
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Papers Processed", len(result.get("results", [])))
+                    with col2:
+                        success_count = sum(1 for r in result.get("results", []) if r.get("success"))
+                        st.metric("Successful", success_count)
+                    with col3:
+                        total_time = result.get("total_processing_time_ms", 0)
+                        st.metric("Total Time", f"{total_time:.0f} ms")
+
+                    # Detailed results
+                    st.markdown("---")
+                    st.markdown("### Detailed Results")
+
+                    for i, paper_result in enumerate(result.get("results", []), 1):
+                        paper_path = paper_result.get("paper_path", "Unknown")
+                        success = paper_result.get("success", False)
+
+                        status_icon = "✓" if success else "✗"
+                        status_color = "#28a745" if success else "#dc3545"
+
+                        with st.expander(f"{status_icon} Paper {i}: {paper_path.split('/')[-1]}"):
+                            if success:
+                                st.markdown(f"<div style='color: {status_color}; font-weight: bold;'>SUCCESS</div>", unsafe_allow_html=True)
+
+                                # Paper details
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.markdown(f"**Paper ID:** `{paper_result.get('paper_id', 'N/A')}`")
+                                    st.markdown(f"**Chunks Created:** {paper_result.get('chunks_count', 0)}")
+                                    st.markdown(f"**Duration:** {paper_result.get('duration_ms', 0):.0f} ms")
+
+                                with col2:
+                                    # Metadata counts
+                                    metadata = paper_result.get("metadata_extracted", {})
+                                    st.markdown("**Metadata Extracted:**")
+                                    st.markdown(f"- Ethnicities: {len(metadata.get('ethnicities', []))}")
+                                    st.markdown(f"- Diagnoses: {len(metadata.get('diagnoses', []))}")
+                                    st.markdown(f"- Symptoms: {len(metadata.get('symptoms', []))}")
+                                    st.markdown(f"- Hormone Therapy: {len(metadata.get('hormone_therapy', []))}")
+                                    st.markdown(f"- Birth Control: {len(metadata.get('birth_control', []))}")
+
+                                # Stage breakdown
+                                stages = paper_result.get("stages", {})
+                                if stages:
+                                    st.markdown("**Stage Breakdown:**")
+                                    stage_data = []
+                                    for stage_name, stage_info in stages.items():
+                                        stage_data.append({
+                                            "Stage": stage_name.replace("_", " ").title(),
+                                            "Duration (ms)": f"{stage_info.get('duration_ms', 0):.0f}",
+                                            "Status": "✓ Complete"
+                                        })
+                                    st.dataframe(stage_data, use_container_width=True)
+
+                            else:
+                                st.markdown(f"<div style='color: {status_color}; font-weight: bold;'>FAILED</div>", unsafe_allow_html=True)
+                                error_msg = paper_result.get("error", "Unknown error")
+                                st.error(f"Error: {error_msg}")
+
+                    # Full response for admin debugging
+                    with st.expander("Full API Response (Admin Debug)"):
+                        st.json(result)
+
+                    if not dry_run and success_count > 0:
+                        st.balloons()
+
+                elif response.status_code == 503:
+                    st.error("Service Unavailable: The ingestion service is not ready. Make sure all dependencies are installed.")
+                elif response.status_code == 400:
+                    st.error("Bad Request: Invalid request parameters")
+                    try:
+                        st.json(response.json())
+                    except:
+                        st.text(response.text)
+                else:
+                    st.error(f"API Error: {response.status_code}")
+                    try:
+                        st.json(response.json())
+                    except:
+                        st.text(response.text)
+
+            except requests.exceptions.ConnectionError:
+                st.error("Connection Error: Could not connect to the API")
+            except requests.exceptions.Timeout:
+                st.error("Timeout Error: Ingestion took too long (>5 minutes)")
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+                st.exception(e)
 
 # Footer
 st.markdown("---")

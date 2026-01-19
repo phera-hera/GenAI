@@ -24,51 +24,58 @@ if "user_role" not in st.session_state or st.session_state.user_role is None:
 # Get API URL from session
 API_BASE_URL = st.session_state.get("api_base_url", "http://localhost:8000")
 
-# Main title
+# Professional styling
+st.markdown("""
+<style>
+    .metric-card {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 6px;
+        border-left: 4px solid #3498db;
+    }
+    .section-header {
+        color: #2c3e50;
+        font-weight: 500;
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("pH Analysis Testing")
-st.markdown("Test the medical agent with various health scenarios")
 st.markdown("---")
 
 # Medical Disclaimer
-with st.expander("Medical Disclaimer - Please Read"):
-    st.warning("""
-    **IMPORTANT NOTICE:**
-    
-    This system is **purely informational** and is **NOT** intended to:
-    - Diagnose medical conditions
-    - Prescribe treatments or medications
-    - Replace professional medical advice
-    
-    Always consult with a qualified healthcare provider for medical concerns.
+with st.expander("Medical Disclaimer"):
+    st.info("""
+    This system provides informational analysis only and does not diagnose conditions or replace professional medical advice. Always consult a qualified healthcare provider for medical concerns.
     """)
 
 # Main content
 col1, col2 = st.columns([1, 1])
 
 with col1:
-    st.subheader("Required Information")
-    
+    st.markdown("#### Required Information")
+
     # pH Value (Required)
     ph_value = st.number_input(
         "pH Value*",
         min_value=0.0,
         max_value=14.0,
         value=4.5,
-        step=0.1,
-        help="Enter the pH value from test strip (0-14)"
+        step=0.1
     )
-    
-    st.subheader("Basic Information")
-    
+
+    st.markdown("#### Basic Information")
+
     # Age
     age = st.number_input(
         "Age",
         min_value=0,
         max_value=120,
-        value=25,
-        help="User's age"
+        value=25
     )
-    
+
     # Ethnic Background
     ethnic_backgrounds = st.multiselect(
         "Ethnic Background(s)",
@@ -86,10 +93,9 @@ with col1:
             "White / Caucasian / European",
             "Mixed / Multiple ancestry",
             "Other"
-        ],
-        help="Select one or more ethnic backgrounds"
+        ]
     )
-    
+
     # Diagnoses
     diagnoses = st.multiselect(
         "Hormone-Related Diagnoses",
@@ -104,12 +110,11 @@ with col1:
             "Uterine fibroids",
             "Polycystic ovary syndrome (PCOS)",
             "Premature ovarian insufficiency (POI)"
-        ],
-        help="Select any applicable diagnoses"
+        ]
     )
-    
-    st.subheader("Hormone Status")
-    
+
+    st.markdown("#### Hormone Status")
+
     # Menstrual Cycle
     menstrual_cycle = st.selectbox(
         "Menstrual Cycle Status",
@@ -123,11 +128,11 @@ with col1:
         ],
         index=0
     )
-    
+
     # Birth Control
-    with st.expander("Birth Control Information"):
+    with st.expander("Birth Control"):
         bc_general = st.selectbox(
-            "General Birth Control Status",
+            "General Status",
             options=[
                 "None",
                 "No birth control or hormonal birth control",
@@ -136,19 +141,19 @@ with col1:
             ],
             index=0
         )
-        
+
         bc_pill = st.selectbox(
             "Pill Type",
             options=["None", "Combined pill", "Progestin-only pill"],
             index=0
         )
-        
+
         bc_iud = st.selectbox(
             "IUD Type",
             options=["None", "Hormonal IUD", "Copper IUD"],
             index=0
         )
-        
+
         bc_other = st.multiselect(
             "Other Hormonal Methods",
             options=[
@@ -158,28 +163,28 @@ with col1:
                 "Patch"
             ]
         )
-        
+
         bc_permanent = st.multiselect(
             "Permanent Methods",
             options=["Tubal ligation"]
         )
-    
+
     # Hormone Therapy
     hormone_therapy = st.multiselect(
         "Hormone Therapy",
         options=["Estrogen only", "Estrogen + progestin"]
     )
-    
+
     hrt = st.multiselect(
-        "Hormone Replacement Therapy (HRT)",
+        "HRT",
         options=["Testosterone", "Estrogen blocker", "Puberty blocker"]
     )
 
 with col2:
-    st.subheader("Fertility Journey")
-    
+    st.markdown("#### Fertility Journey")
+
     fertility_status = st.selectbox(
-        "Current Fertility Status",
+        "Current Status",
         options=[
             "None",
             "I am pregnant",
@@ -189,9 +194,9 @@ with col2:
         ],
         index=0
     )
-    
+
     fertility_treatments = st.multiselect(
-        "Fertility Treatments (last 3 months)",
+        "Treatments (last 3 months)",
         options=[
             "Ovulation induction",
             "Intrauterine insemination (IUI)",
@@ -200,9 +205,9 @@ with col2:
             "Luteal progesterone"
         ]
     )
-    
-    st.subheader("Current Symptoms")
-    
+
+    st.markdown("#### Current Symptoms")
+
     # Discharge
     discharge_symptoms = st.multiselect(
         "Discharge",
@@ -215,17 +220,15 @@ with col2:
             "Grey and watery",
             "Yellow / Green",
             "Red / Brown"
-        ],
-        help="Discharge varies by cycle, hygiene, medications, and stress"
+        ]
     )
-    
+
     # Vulva & Vagina
     vulva_symptoms = st.multiselect(
         "Vulva & Vagina",
-        options=["Dry", "Itchy"],
-        help="Occasional dryness or itchiness is normal after shaving or new products"
+        options=["Dry", "Itchy"]
     )
-    
+
     # Smell
     smell_symptoms = st.multiselect(
         "Smell",
@@ -234,22 +237,19 @@ with col2:
             "Sour",
             "Chemical-like",
             "Very strong or rotten"
-        ],
-        help="A healthy vagina can have natural metallic, musky, earthy, or tangy scents"
+        ]
     )
-    
+
     # Urine
     urine_symptoms = st.multiselect(
         "Urine",
-        options=["Frequent urination", "Burning sensation"],
-        help="Normal to urinate more after fluids, coffee, or during stress"
+        options=["Frequent urination", "Burning sensation"]
     )
-    
+
     # Notes
     notes = st.text_area(
         "Additional Notes",
-        placeholder="Add any extra symptoms or how you've been feeling...",
-        help="These notes are for app context only and NOT sent to the medical agent"
+        placeholder="Optional: Add any extra symptoms or context..."
     )
 
 st.markdown("---")
@@ -422,24 +422,3 @@ if submit_button:
         st.error("Timeout Error: The request took too long. Please try again.")
     except Exception as e:
         st.error(f"Error: {str(e)}")
-
-# Footer with tips
-st.markdown("---")
-st.markdown("### Testing Tips")
-col1, col2 = st.columns(2)
-
-with col1:
-    st.markdown("""
-    **Quick Start**
-    - Only pH value is required
-    - Add symptoms for more detailed analysis
-    - Try different scenarios to validate results
-    """)
-
-with col2:
-    st.markdown("""
-    **Test Scenarios**
-    - Normal pH: 3.8-4.5
-    - Elevated pH: 5.0-7.0
-    - Add symptoms to test personalization
-    """)
