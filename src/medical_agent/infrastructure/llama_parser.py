@@ -40,6 +40,7 @@ class LlamaParserClient:
         azure_endpoint: str | None = None,
         azure_api_version: str | None = None,
         azure_deployment_name: str | None = None,
+        llama_cloud_api_key: str | None = None,
     ):
         """
         Initialize the LlamaParser client in LVM mode.
@@ -49,6 +50,7 @@ class LlamaParserClient:
             azure_endpoint: Azure OpenAI endpoint (defaults to settings)
             azure_api_version: Azure OpenAI API version (defaults to settings)
             azure_deployment_name: Azure OpenAI deployment name (defaults to settings)
+            llama_cloud_api_key: LlamaCloud API key for usage tracking (defaults to settings)
         """
         self.azure_api_key = azure_api_key or settings.azure_openai_api_key
         self.azure_endpoint = azure_endpoint or settings.azure_openai_endpoint
@@ -56,6 +58,7 @@ class LlamaParserClient:
         self.azure_deployment_name = (
             azure_deployment_name or settings.azure_openai_deployment_name
         )
+        self.llama_cloud_api_key = llama_cloud_api_key or settings.llama_cloud_api_key
         self._client: LlamaParse | None = None
 
     @property
@@ -72,18 +75,20 @@ class LlamaParserClient:
             logger.info(f"Initializing LlamaParser in LVM mode with Azure GPT-4o")
 
             self._client = LlamaParse(
+                # LlamaCloud API key for usage tracking (required for credits)
+                api_key=self.llama_cloud_api_key,
                 # Use LVM (Large Vision Model) mode with your own Azure model
                 parse_mode="parse_page_with_lvm",
                 # Use Azure OpenAI's multimodal capabilities
                 use_vendor_multimodal_model=True,
-                # Azure OpenAI configuration
-                azure_openai_api_key=self.azure_api_key,
+                # Azure OpenAI configuration (note: parameter name is azure_openai_key, not api_key)
+                azure_openai_key=self.azure_api_key,
                 azure_openai_endpoint=self.azure_endpoint,
                 azure_openai_api_version=self.azure_api_version,
                 azure_openai_deployment_name=self.azure_deployment_name,
                 # Parsing instructions for medical research papers
-                parsing_instruction=(
-                    "This is a medical research paper. "
+                system_prompt=(
+                    "You are an expert at understanding medical research papers. "
                     "Extract all text, tables, figures, and section headers clearly. "
                     "Preserve the hierarchical structure of sections. "
                     "For tables, maintain the row and column structure. "
@@ -101,6 +106,7 @@ class LlamaParserClient:
             and self.azure_endpoint
             and self.azure_api_version
             and self.azure_deployment_name
+            and self.llama_cloud_api_key
         )
 
     def verify_connection(self) -> bool:

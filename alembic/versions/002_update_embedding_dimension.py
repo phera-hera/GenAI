@@ -9,10 +9,12 @@ from 1536 (text-embedding-3-small) to 3072 (text-embedding-3-large).
 
 The migration:
 1. Renames the old embedding column
-2. Creates a new embedding column with the correct dimension
-3. Migrates data (will fail/truncate if vectors don't match, which is expected on first run)
-4. Drops the old column
-5. Updates the vector index
+2. Creates a new embedding column with 3072 dimensions
+3. Drops the old column
+4. Note: No index is created on 3072-dim vectors (pgvector index limit is 2000 dims)
+   Vector similarity search will still work, just without index acceleration.
+   This is fine for development/testing. For production with millions of vectors,
+   consider using a separate specialized vector database.
 """
 
 from typing import Sequence, Union
@@ -46,21 +48,17 @@ def upgrade() -> None:
     # Drop the old column
     op.execute("ALTER TABLE paper_chunks DROP COLUMN embedding_old")
 
-    # Recreate the IVFFlat index for 3072-dimensional vectors
-    op.execute(
-        """
-        CREATE INDEX ix_paper_chunks_embedding_ivfflat
-        ON paper_chunks
-        USING ivfflat (embedding vector_cosine_ops)
-        WITH (lists = 100)
-        """
-    )
+    # Note: No index created for 3072-dim vectors
+    # PostgreSQL pgvector extension has a 2000-dimension limit for both
+    # IVFFlat and HNSW indexes. Vector similarity search will still work
+    # efficiently for development/testing (vectors are still searchable,
+    # just without index acceleration).
 
 
 def downgrade() -> None:
     """Revert embedding dimension from 3072 back to 1536."""
 
-    # Drop the IVFFlat index
+    # Drop the index if it exists
     op.execute("DROP INDEX IF EXISTS ix_paper_chunks_embedding_ivfflat")
 
     # Rename new embedding column
@@ -72,7 +70,7 @@ def downgrade() -> None:
     # Drop the new column
     op.execute("ALTER TABLE paper_chunks DROP COLUMN embedding_new")
 
-    # Recreate the old IVFFlat index
+    # Recreate the old IVFFlat index (1536 dims is safe for IVFFlat)
     op.execute(
         """
         CREATE INDEX ix_paper_chunks_embedding_ivfflat

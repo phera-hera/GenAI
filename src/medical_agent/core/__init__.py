@@ -8,6 +8,12 @@ from medical_agent.core.exceptions import (
     NotFoundError,
     ValidationError,
 )
+from medical_agent.core.paper_manager import (
+    DeletionResult,
+    PaperManager,
+    delete_paper_by_doi,
+    delete_paper_by_id,
+)
 
 __all__ = [
     "settings",
@@ -16,6 +22,10 @@ __all__ = [
     "ExternalServiceException",
     "NotFoundError",
     "ValidationError",
+    "PaperManager",
+    "DeletionResult",
+    "delete_paper_by_id",
+    "delete_paper_by_doi",
 ]
 
 

@@ -126,50 +126,80 @@ class PDFParserFacade:
     ) -> ParsedDocument:
         """
         Parse a PDF document using the best available parser.
-        
+
+        Automatically falls back to PyMuPDF if LlamaParser fails.
+
         Args:
             pdf_content: PDF file content as bytes
             source_file: Optional source file path for metadata
             extract_metadata: Whether to extract paper metadata
-            
+
         Returns:
             ParsedDocument with extracted content
         """
-        parser = self.get_available_parser()
-        
-        if parser is None:
-            logger.error("No PDF parser available")
-            from .document_result import PaperMetadata
-            from datetime import datetime, timezone
-            
-            return ParsedDocument(
-                full_text="",
-                is_successful=False,
-                parsing_errors=[
-                    "No PDF parser available. Configure LlamaParser "
-                    "or install PyMuPDF (pip install pymupdf) for fallback."
-                ],
-                metadata=PaperMetadata(
+        from .document_result import PaperMetadata
+        from datetime import datetime, timezone
+
+        # Try LlamaParser first if available
+        if self.llama_parser.is_available():
+            parser_name = "llama_parser"
+            logger.info(f"Using {parser_name} parser for: {source_file or 'unknown'}")
+
+            try:
+                result = self.llama_parser.parse(
+                    pdf_content=pdf_content,
                     source_file=source_file,
-                    parsed_at=datetime.now(timezone.utc),
-                ),
+                    extract_metadata=extract_metadata,
+                )
+
+                # If parsing was successful, return it
+                if result.is_successful and result.full_text:
+                    return result
+
+                # If failed but no fallback allowed, return the failed result
+                if not self.allow_fallback:
+                    logger.warning(f"LlamaParser parsing failed and no fallback allowed")
+                    return result
+
+                # Otherwise fall through to try fallback
+                logger.warning(f"LlamaParser parsing failed, attempting fallback parser")
+
+            except Exception as e:
+                logger.warning(f"LlamaParser failed with error: {e}")
+                if not self.allow_fallback:
+                    raise
+
+        # Try fallback parser
+        if self.allow_fallback and self.fallback_parser.is_available():
+            parser_name = "fallback"
+            logger.info(f"Using {parser_name} parser for: {source_file or 'unknown'}")
+
+            result = self.fallback_parser.parse(
+                pdf_content=pdf_content,
+                source_file=source_file,
+                extract_metadata=extract_metadata,
             )
-        
-        parser_name = self.get_parser_name()
-        logger.info(f"Using {parser_name} parser for: {source_file or 'unknown'}")
-        
-        result = parser.parse(
-            pdf_content=pdf_content,
-            source_file=source_file,
-            extract_metadata=extract_metadata,
-        )
-        
-        # Add parser info to metadata
-        if parser_name == "fallback" and result.is_successful:
-            if "fallback" not in result.metadata.parser_version:
+
+            # Add fallback marker to parser version if successful
+            if result.is_successful and "fallback" not in result.metadata.parser_version:
                 result.metadata.parser_version += "-fallback"
-        
-        return result
+
+            return result
+
+        # No parser available
+        logger.error("No PDF parser available")
+        return ParsedDocument(
+            full_text="",
+            is_successful=False,
+            parsing_errors=[
+                "No PDF parser available. Configure LlamaParser "
+                "or install PyMuPDF (pip install pymupdf) for fallback."
+            ],
+            metadata=PaperMetadata(
+                source_file=source_file,
+                parsed_at=datetime.now(timezone.utc),
+            ),
+        )
     
     def parse_with_llama_parser(
         self,

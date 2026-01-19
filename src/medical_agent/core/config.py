@@ -73,12 +73,21 @@ class Settings(BaseSettings):
         )
 
     # -------------------------------------------------------------------------
-    # Azure OpenAI Settings
+    # Azure OpenAI Settings - LLM (Chat Completions)
     # -------------------------------------------------------------------------
     azure_openai_api_key: str = Field(default="")
     azure_openai_endpoint: str = Field(default="")
     azure_openai_api_version: str = Field(default="2024-02-15-preview")
     azure_openai_deployment_name: str = Field(default="gpt-4o")
+    azure_openai_mini_deployment_name: str = Field(default="gpt-4o-mini")
+
+    # -------------------------------------------------------------------------
+    # Azure OpenAI Settings - Embeddings (Separate Endpoint/Key)
+    # -------------------------------------------------------------------------
+    # Use these if embeddings are deployed in a different Azure OpenAI instance
+    azure_openai_embedding_api_key: str = Field(default="")
+    azure_openai_embedding_endpoint: str = Field(default="")
+    azure_openai_embedding_api_version: str = Field(default="2024-02-15-preview")
     azure_openai_embedding_deployment_name: str = Field(
         default="text-embedding-3-large"
     )
@@ -153,7 +162,22 @@ class Settings(BaseSettings):
         return self.environment == "production"
 
     def is_azure_openai_configured(self) -> bool:
-        """Check if Azure OpenAI is properly configured."""
+        """Check if Azure OpenAI LLM is properly configured."""
+        return bool(self.azure_openai_api_key and self.azure_openai_endpoint)
+
+    def is_azure_openai_embedding_configured(self) -> bool:
+        """
+        Check if Azure OpenAI embeddings are properly configured.
+
+        Returns True if either:
+        1. Separate embedding credentials are provided, OR
+        2. Main Azure OpenAI credentials exist (fallback)
+        """
+        # Use separate embedding credentials if provided
+        if self.azure_openai_embedding_api_key and self.azure_openai_embedding_endpoint:
+            return True
+
+        # Fall back to main credentials if separate ones not provided
         return bool(self.azure_openai_api_key and self.azure_openai_endpoint)
 
     def is_langfuse_configured(self) -> bool:
