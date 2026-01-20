@@ -59,44 +59,85 @@ class ExtractedTable:
     page_number: int | None = None
     caption: str | None = None
     
-    def to_markdown(self) -> str:
+    def to_html(self) -> str:
         """
-        Convert the table to markdown format.
-        
+        Convert the table to HTML format for better structure preservation.
+
         Returns:
-            Markdown representation of the table
+            HTML representation of the table
         """
         if not self.cells:
             return ""
-        
+
         # Build a 2D grid
         grid: list[list[str]] = [
             ["" for _ in range(self.column_count)]
             for _ in range(self.row_count)
         ]
-        
+
         # Fill the grid with cell contents
         for cell in self.cells:
             if cell.row_index < self.row_count and cell.column_index < self.column_count:
                 grid[cell.row_index][cell.column_index] = cell.content
-        
+
+        # Generate HTML
+        html_parts = []
+
+        # Add caption if present
+        if self.caption:
+            html_parts.append(f"<caption>{self.caption}</caption>")
+
+        # Add table rows
+        html_parts.append("<table>")
+        for row_idx, row in enumerate(grid):
+            html_parts.append("  <tr>")
+            # First row is header
+            tag = "th" if row_idx == 0 else "td"
+            for cell_content in row:
+                html_parts.append(f"    <{tag}>{cell_content or ''}</{tag}>")
+            html_parts.append("  </tr>")
+        html_parts.append("</table>")
+
+        return "\n".join(html_parts)
+
+    def to_markdown(self) -> str:
+        """
+        Convert the table to markdown format.
+
+        Returns:
+            Markdown representation of the table
+        """
+        if not self.cells:
+            return ""
+
+        # Build a 2D grid
+        grid: list[list[str]] = [
+            ["" for _ in range(self.column_count)]
+            for _ in range(self.row_count)
+        ]
+
+        # Fill the grid with cell contents
+        for cell in self.cells:
+            if cell.row_index < self.row_count and cell.column_index < self.column_count:
+                grid[cell.row_index][cell.column_index] = cell.content
+
         # Generate markdown
         lines = []
-        
+
         # Add caption if present
         if self.caption:
             lines.append(f"**{self.caption}**\n")
-        
+
         for row_idx, row in enumerate(grid):
             # Create row
             row_text = "| " + " | ".join(cell or "" for cell in row) + " |"
             lines.append(row_text)
-            
+
             # Add header separator after first row
             if row_idx == 0:
                 separator = "| " + " | ".join("---" for _ in row) + " |"
                 lines.append(separator)
-        
+
         return "\n".join(lines)
     
     def to_dict(self) -> dict[str, Any]:

@@ -152,7 +152,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Chunking Settings
     # -------------------------------------------------------------------------
-    chunk_overlap_chars: int = Field(default=200, description="Overlap between chunks for context preservation")
+    chunk_overlap_chars: int = Field(default=0, description="No overlap - sections are semantically bounded by Docling")
     respect_section_boundaries: bool = Field(default=True, description="Don't split sections mid-concept")
 
     # -------------------------------------------------------------------------

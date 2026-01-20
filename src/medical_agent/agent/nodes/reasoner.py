@@ -182,11 +182,18 @@ def build_default_reasoning(
         chunks: Retrieved chunks
 
     Returns:
-        Default reasoning output dict
+        Default reasoning output dict with explicit insufficient evidence flag
     """
     query_analysis = state.get("query_analysis", {})
     risk_assessment = state.get("risk_assessment", {})
     ph_value = query_analysis.get("ph_value", state.get("ph_value", 4.5))
+
+    # Check retrieval quality
+    retrieval_quality = state.get("retrieval_quality", "unknown")
+    has_sufficient_evidence = (
+        retrieval_quality == "sufficient" and
+        len(chunks) >= 3
+    )
 
     # Build evidence summary from chunks
     evidence_summary = []
@@ -199,32 +206,49 @@ def build_default_reasoning(
         })
 
     # Build citations
-    citations = extract_citations_from_chunks(chunks)
+    citations = extract_citations_from_chunks(chunks) if chunks else []
 
-    # Default insights based on pH
+    # Build insights based on evidence availability
     synthesized_insights = []
-    if ph_value <= 4.5:
+
+    if not has_sufficient_evidence:
+        # EXPLICIT insufficient information message
         synthesized_insights.append(
-            "Your pH level is within the normal range, indicating a healthy vaginal environment."
+            "Based on the current medical research available in our database, "
+            "we do not have sufficient information to provide evidence-based guidance on this specific query."
+        )
+        synthesized_insights.append(
+            "A healthcare provider can evaluate your complete health picture and provide personalized guidance."
         )
     else:
+        # Has evidence - provide pH-based insights
+        if ph_value <= 4.5:
+            synthesized_insights.append(
+                "Your pH level is within the normal range, indicating a healthy vaginal environment."
+            )
+        else:
+            synthesized_insights.append(
+                "Your pH level is elevated above the normal range of 3.8-4.5."
+            )
+
         synthesized_insights.append(
-            "Your pH level is elevated above the normal range of 3.8-4.5."
+            "A healthcare provider can offer personalized guidance based on your complete health picture."
         )
 
-    synthesized_insights.append(
-        "A healthcare provider can offer personalized guidance based on your complete health picture."
-    )
+    # Build knowledge gaps
+    knowledge_gaps = []
+    if not has_sufficient_evidence:
+        knowledge_gaps.append("Limited research available in our database for this specific query.")
+    knowledge_gaps.append("Individual health context should be evaluated by a healthcare provider.")
 
     return {
         "evidence_summary": evidence_summary,
         "profile_correlations": [],
         "conflicting_evidence": [],
         "synthesized_insights": synthesized_insights,
-        "knowledge_gaps": [
-            "Individual health context should be evaluated by a healthcare provider."
-        ],
+        "knowledge_gaps": knowledge_gaps,
         "citations": citations,
+        "has_sufficient_evidence": has_sufficient_evidence,  # NEW FLAG
     }
 
 

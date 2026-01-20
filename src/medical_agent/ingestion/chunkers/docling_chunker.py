@@ -287,15 +287,31 @@ class DoclingHierarchicalChunker:
         tables: list[ExtractedTable],
         start_index: int,
     ) -> list[ChunkedSection]:
-        """Create dedicated chunks for tables."""
+        """
+        Create dedicated chunks for tables.
+
+        IMPORTANT: Tables are NEVER subject to chunk overlap. Each table is preserved
+        as a complete semantic unit to prevent cutting mid-table. Large tables that
+        exceed max_chunk_chars are kept intact to maintain structure.
+        """
         chunks: list[ChunkedSection] = []
 
         for table in tables:
-            markdown = table.to_markdown()
-            if not markdown:
+            # Use HTML for better structure preservation
+            html = table.to_html()
+            if not html:
                 continue
 
-            content = f"Table {table.table_id}:\n{markdown}"
+            # Check table size and warn if large
+            table_size = len(html)
+            if table_size > self.max_chunk_chars:
+                logger.warning(
+                    f"Table {table.table_id} exceeds max_chunk_chars "
+                    f"({table_size} > {self.max_chunk_chars}). "
+                    f"Keeping as single chunk to preserve structure."
+                )
+
+            content = f"Table {table.table_id}:\n{html}"
 
             # Add caption if present
             if table.caption:
@@ -313,6 +329,8 @@ class DoclingHierarchicalChunker:
                     "caption": table.caption,
                     "row_count": table.row_count,
                     "column_count": table.column_count,
+                    "overlap_applied": False,  # Tables never have overlap
+                    "is_complete_table": True,  # Tables are complete units
                 },
             )
             chunks.append(chunk)
@@ -325,7 +343,7 @@ def get_docling_chunker() -> DoclingHierarchicalChunker:
     """Create a Docling chunker with settings from config."""
     return DoclingHierarchicalChunker(
         max_chunk_chars=1200,  # Default from existing chunker
-        overlap_chars=getattr(settings, "chunk_overlap_chars", 200),
+        overlap_chars=getattr(settings, "chunk_overlap_chars", 0),  # No overlap - semantic sections
         include_tables=True,
         respect_section_boundaries=getattr(settings, "respect_section_boundaries", True),
     )

@@ -176,6 +176,26 @@ async def aretriever_node(state: AgentState) -> AgentState:
             top_k=settings.vector_similarity_top_k,
         )
 
+        # Check retrieval quality
+        retrieval_quality = "sufficient"
+        min_chunks_threshold = 3  # Require at least 3 chunks for sufficient evidence
+        min_score_threshold = 0.5  # Require reasonable relevance
+
+        if not retrieved_chunks:
+            retrieval_quality = "none"
+            logger.warning("Retrieval returned 0 chunks")
+        elif len(retrieved_chunks) < min_chunks_threshold:
+            retrieval_quality = "insufficient"
+            logger.warning(f"Retrieval returned only {len(retrieved_chunks)} chunks (threshold: {min_chunks_threshold})")
+        elif all(c.get("score", 0) < min_score_threshold for c in retrieved_chunks):
+            retrieval_quality = "low_relevance"
+            logger.warning(f"All retrieved chunks have low relevance scores (< {min_score_threshold})")
+
+        # Store quality assessment in state
+        state["retrieval_quality"] = retrieval_quality
+        state["retrieval_chunk_count"] = len(retrieved_chunks)
+        state["retrieval_max_score"] = max((c.get("score", 0) for c in retrieved_chunks), default=0.0)
+
         # Log to Langfuse
         if trace:
             langfuse.log_retrieval(

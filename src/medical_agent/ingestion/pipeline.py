@@ -46,7 +46,7 @@ class PipelineConfig:
 
     # Chunking settings
     max_chunk_chars: int = 1200
-    chunk_overlap_chars: int = 200
+    chunk_overlap_chars: int = 0  # No overlap - Docling sections are semantically bounded
     include_tables: bool = True
     respect_section_boundaries: bool = True
 
