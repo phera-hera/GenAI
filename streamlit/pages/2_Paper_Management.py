@@ -66,23 +66,32 @@ async def delete_paper(paper_id: str, delete_from_gcp: bool = True):
 st.markdown("""
 <style>
     /* Global Styles */
-    h1, h2, h3 {
-        color: #8BC34A !important;
+    .stApp {
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
     }
-    
+
+    body, p, div, span, label {
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    }
+
+    h1, h2, h3 {
+        color: #0F5257 !important;
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+    }
+
     .success-box {
-        background: #1B5E20; /* Dark Green bg */
+        background: #1A4D2E; /* Forest Green bg */
         padding: 0.75rem;
         border-radius: 4px;
-        border-left: 4px solid #66BB6A;
+        border-left: 4px solid #2D7A4A;
         margin: 0.5rem 0;
         color: #E8F5E9;
     }
     .info-box {
-        background: #01579B;
+        background: #0D3D4D;
         padding: 0.75rem;
         border-radius: 4px;
-        border-left: 4px solid #29B6F6;
+        border-left: 4px solid #0F5257;
         margin: 0.5rem 0;
         color: #E1F5FE;
     }
@@ -560,7 +569,7 @@ with tab4:
                         success = paper_result.get("success", False)
 
                         status_icon = "✓" if success else "✗"
-                        status_color = "#28a745" if success else "#dc3545"
+                        status_color = "#2D7A4A" if success else "#DC2626"
 
                         with st.expander(f"{status_icon} Paper {i}: {paper_path.split('/')[-1]}"):
                             if success:

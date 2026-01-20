@@ -34,16 +34,25 @@ API_BASE_URL = st.session_state.get("api_base_url", "http://localhost:8000")
 st.markdown("""
 <style>
     /* Global Styles */
-    h1, h2, h3 {
-        color: #8BC34A !important;
+    .stApp {
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
     }
-    
+
+    body, p, div, span, label {
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    }
+
+    h1, h2, h3 {
+        color: #0F5257 !important;
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+    }
+
     .status-good {
-        color: #76FF03;
+        color: #2D7A4A;
         font-weight: bold;
     }
     .status-bad {
-        color: #FF1744;
+        color: #DC2626;
         font-weight: bold;
     }
 </style>

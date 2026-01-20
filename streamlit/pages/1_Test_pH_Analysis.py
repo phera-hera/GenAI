@@ -31,45 +31,53 @@ st.markdown("""
     .stApp {
         background-color: #050505;
         color: #e0e0e0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
     }
-    
+
+    /* Body text styling */
+    body, p, div, span, label {
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    }
+
     /* Header Styles */
     h1, h2, h3 {
-        color: #4caf50 !important; /* Standard Green */
-        font-family: 'Helvetica Neue', sans-serif;
+        color: #0F5257 !important; /* Dark Teal */
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
     }
-    
+
     h4 {
-        color: #81c784 !important; /* Soft Green */
+        color: #3D8B6F !important; /* Muted Sage */
     }
-    
+
     /* Metric Card */
     .metric-card {
         background: #121212;
         padding: 1rem;
         border-radius: 6px;
-        border-left: 4px solid #2e7d32;
+        border-left: 4px solid #245953;
         box-shadow: 0 4px 6px rgba(0,0,0,0.5);
     }
-    
+
     .section-header {
-        color: #4caf50;
+        color: #0F5257;
         font-weight: 600;
         margin-top: 1rem;
         margin-bottom: 0.5rem;
     }
-    
+
     /* Custom Button */
     div.stButton > button:first-child {
-        background-color: #0a2f10;
-        color: #a5d6a7;
-        border: 1px solid #1b5e20;
+        background-color: #1A4D2E;
+        color: #E8F5E9;
+        border: 1px solid #245953;
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', system-ui, sans-serif;
+        font-weight: 600;
     }
     div.stButton > button:first-child:hover {
-        background-color: #1b5e20;
-        box-shadow: 0 0 15px rgba(76, 175, 80, 0.3);
+        background-color: #0F5257;
+        box-shadow: 0 0 15px rgba(15, 82, 87, 0.3);
     }
-    
+
     /* Input Fields */
     .stTextInput input, .stNumberInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {
         color: #fafafa;
@@ -405,10 +413,10 @@ if submit_button:
                 # Risk Level with color coding
                 risk_level = result.get("risk_level", "UNKNOWN")
                 risk_colors = {
-                    "NORMAL": "#76FF03",  # Bright Green
-                    "MONITOR": "#FFEA00", # Bright Yellow
-                    "CONCERNING": "#FF9100", # Bright Orange
-                    "URGENT": "#FF1744"   # Bright Red
+                    "NORMAL": "#2D7A4A",  # Deep Forest Green
+                    "MONITOR": "#D4A506", # Muted Gold
+                    "CONCERNING": "#D97706", # Deep Orange
+                    "URGENT": "#DC2626"   # Deep Red
                 }
                 risk_color = risk_colors.get(risk_level, "#B0BEC5")
                 

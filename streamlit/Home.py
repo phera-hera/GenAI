@@ -30,14 +30,20 @@ st.markdown("""
     .stApp {
         background-color: #050505; /* Ultra Dark background */
         color: #e0e0e0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
     }
-    
+
+    /* Body text styling */
+    body, p, div, span, label {
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    }
+
     /* Header Styles - pHera Logo Text */
     .main-header {
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
         font-size: 6rem;
         font-weight: 800;
-        background: linear-gradient(to right, #1b5e20, #4caf50);
+        background: linear-gradient(to right, #1A4D2E, #0F5257);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin-bottom: 0.1rem;
@@ -45,46 +51,47 @@ st.markdown("""
         margin-top: 2rem;
         letter-spacing: -3px;
     }
-    
+
     /* Sub-header / Tagline */
     .sub-header {
-        font-family: 'Helvetica Neue', serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
         font-size: 1.8rem;
-        color: #81c784; /* Soft Green */
+        color: #3D8B6F; /* Muted Sage */
         font-weight: 500;
         margin-bottom: 3rem;
         text-align: center;
         line-height: 1.4;
         font-style: italic;
     }
-    
+
     /* Custom Button Styling - Primary Action */
     div.stButton > button:first-child {
-        background-color: #0a2f10; /* Very Dark Green */
-        color: #a5d6a7; /* Pale Green Text */
-        border: 1px solid #1b5e20;
+        background-color: #1A4D2E; /* Forest Green */
+        color: #E8F5E9; /* Very Light Sage */
+        border: 1px solid #245953;
         border-radius: 8px;
         padding: 0.75rem 2rem;
         font-size: 1.2rem;
         font-weight: 600;
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', system-ui, sans-serif;
         transition: all 0.3s ease;
         box-shadow: 0 4px 6px rgba(0,0,0,0.5);
     }
     div.stButton > button:first-child:hover {
-        background-color: #1b5e20;
-        box-shadow: 0 0 20px rgba(27, 94, 32, 0.6);
-        border-color: #2e7d32;
+        background-color: #0F5257; /* Dark Teal */
+        box-shadow: 0 0 20px rgba(15, 82, 87, 0.6);
+        border-color: #245953;
         color: white;
     }
-    
+
     /* Hide sidebar by default if user is not admin */
     [data-testid="stSidebar"] {
         display: none;
     }
-    
+
     /* Expander Styling */
     .streamlit-expanderHeader {
-        color: #4caf50 !important;
+        color: #0F5257 !important;
     }
 </style>
 """, unsafe_allow_html=True)
