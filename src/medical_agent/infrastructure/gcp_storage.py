@@ -252,33 +252,27 @@ class GCPStorageClient:
         except Exception as e:
             raise StorageError(f"Failed to delete PDF: {e}")
     
-    def list_pdfs(self, prefix: str = "papers/") -> list[dict]:
+    def list_pdfs(self, prefix: str = "") -> list[str]:
         """
         List all PDFs in the bucket with a given prefix.
-        
+
         Args:
-            prefix: Path prefix to filter (default: "papers/")
-            
+            prefix: Path prefix to filter (default: "")
+
         Returns:
-            List of file info dicts with name, size, updated, metadata
+            List of PDF filenames
         """
         if not self.is_configured():
             raise StorageError("GCP Storage is not configured")
-        
+
         try:
             blobs = self.client.list_blobs(self.bucket_name, prefix=prefix)
-            
+
             files = []
             for blob in blobs:
                 if blob.name.endswith(".pdf"):
-                    files.append({
-                        "name": blob.name,
-                        "size": blob.size,
-                        "updated": blob.updated,
-                        "metadata": blob.metadata or {},
-                        "gcs_uri": f"gs://{self.bucket_name}/{blob.name}",
-                    })
-            
+                    files.append(blob.name)
+
             return files
         except Exception as e:
             raise StorageError(f"Failed to list PDFs: {e}")
