@@ -145,18 +145,34 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
 
         # Build citations
         citations = []
+        # Try to get citations from result first, then fall back to reasoning_output
         raw_citations = result.get("citations", []) or reasoning_output.get("citations", [])
+        
+        logger.debug(
+            f"Citation extraction: result.citations={len(result.get('citations', []))}, "
+            f"reasoning_output.citations={len(reasoning_output.get('citations', []))}, "
+            f"raw_citations={len(raw_citations)}"
+        )
+        
         for c in raw_citations:
             if isinstance(c, dict):
+                # Skip citations without paper_id (invalid)
+                paper_id = c.get("paper_id", "")
+                if not paper_id or paper_id == "":
+                    logger.warning(f"Skipping citation without paper_id: {c}")
+                    continue
+                    
                 citations.append(
                     CitationResponse(
-                        paper_id=c.get("paper_id", ""),
+                        paper_id=paper_id,
                         title=c.get("title"),
                         authors=c.get("authors"),
                         doi=c.get("doi"),
                         relevant_section=c.get("relevant_section"),
                     )
                 )
+        
+        logger.info(f"Built {len(citations)} citations for response")
 
         return QueryResponse(
             session_id=result.get("session_id", ""),

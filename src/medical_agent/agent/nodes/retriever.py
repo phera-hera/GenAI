@@ -274,21 +274,50 @@ def extract_citations_from_chunks(chunks: list[dict[str, Any]]) -> list[dict[str
     Returns:
         List of unique citation dicts
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     seen_papers = set()
     citations = []
+    chunks_without_paper_id = 0
 
     for chunk in chunks:
         paper_id = chunk.get("paper_id")
+        
+        # Handle both string and None/empty cases
+        if not paper_id or paper_id == "":
+            chunks_without_paper_id += 1
+            logger.debug(
+                f"Chunk {chunk.get('chunk_id', 'unknown')} missing paper_id. "
+                f"Available keys: {list(chunk.keys())}"
+            )
+            continue
+            
+        # Convert to string if needed (UUID objects, etc.)
+        paper_id = str(paper_id).strip()
+        
         if paper_id and paper_id not in seen_papers:
             seen_papers.add(paper_id)
-            citations.append({
+            citation = {
                 "paper_id": paper_id,
-                "title": chunk.get("paper_title", "Unknown"),
-                "authors": chunk.get("paper_authors", "Unknown"),
+                "title": chunk.get("paper_title") or "Unknown",
+                "authors": chunk.get("paper_authors") or "Unknown",
                 "doi": chunk.get("paper_doi"),
                 "score": chunk.get("score", 0.0),
-            })
+            }
+            citations.append(citation)
+            logger.debug(
+                f"Extracted citation: {citation['title'][:50]}... "
+                f"(paper_id={paper_id[:8]}...)"
+            )
 
+    if chunks_without_paper_id > 0:
+        logger.warning(
+            f"{chunks_without_paper_id} chunks out of {len(chunks)} "
+            f"missing paper_id - citations may be incomplete"
+        )
+    
+    logger.info(f"Extracted {len(citations)} unique citations from {len(chunks)} chunks")
     return citations
 
 

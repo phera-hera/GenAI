@@ -331,13 +331,55 @@ async def areasoner_node(state: AgentState) -> AgentState:
                     )
                 )
 
-        # Parse citations
-        citations = []
+        # ALWAYS extract citations from chunks (source of truth)
+        # Chunks contain the actual paper metadata from the database
+        chunk_citations = extract_citations_from_chunks(retrieved_chunks) if retrieved_chunks else []
+        logger.debug(f"Extracted {len(chunk_citations)} citations from {len(retrieved_chunks)} chunks")
+        
+        # Build citation map from chunks (paper_id -> citation dict)
+        citation_map = {}
+        for cit in chunk_citations:
+            paper_id = cit.get("paper_id")
+            if paper_id:
+                citation_map[paper_id] = cit
+        
+        # Parse citations from LLM (if any) and merge with chunk citations
+        # Chunk citations take precedence since they're from the actual database
+        llm_citations = []
         for cit in reasoning_dict.get("citations", []):
             if isinstance(cit, dict):
+                paper_id = cit.get("paper_id", "")
+                # Only add LLM citation if we don't already have it from chunks
+                if paper_id and paper_id not in citation_map:
+                    llm_citations.append(cit)
+        
+        # Combine citations: chunks first (source of truth), then LLM citations
+        citations = []
+        seen_paper_ids = set()
+        
+        # Add chunk citations first (these are the actual retrieved papers)
+        for cit in chunk_citations:
+            paper_id = cit.get("paper_id")
+            if paper_id and paper_id not in seen_paper_ids:
+                seen_paper_ids.add(paper_id)
                 citations.append(
                     Citation(
-                        paper_id=cit.get("paper_id", ""),
+                        paper_id=paper_id,
+                        title=cit.get("title", "Unknown"),
+                        authors=cit.get("authors", "Unknown"),
+                        doi=cit.get("doi"),
+                        score=cit.get("score"),
+                    )
+                )
+        
+        # Add LLM citations that weren't in chunks
+        for cit in llm_citations:
+            paper_id = cit.get("paper_id", "")
+            if paper_id and paper_id not in seen_paper_ids:
+                seen_paper_ids.add(paper_id)
+                citations.append(
+                    Citation(
+                        paper_id=paper_id,
                         title=cit.get("title", "Unknown"),
                         authors=cit.get("authors", "Unknown"),
                         year=cit.get("year"),
@@ -346,20 +388,8 @@ async def areasoner_node(state: AgentState) -> AgentState:
                         score=cit.get("score"),
                     )
                 )
-
-        # If no citations from LLM, extract from chunks
-        if not citations:
-            chunk_citations = extract_citations_from_chunks(retrieved_chunks)
-            for cit in chunk_citations:
-                citations.append(
-                    Citation(
-                        paper_id=cit.get("paper_id", ""),
-                        title=cit.get("title", "Unknown"),
-                        authors=cit.get("authors", "Unknown"),
-                        doi=cit.get("doi"),
-                        score=cit.get("score"),
-                    )
-                )
+        
+        logger.info(f"Total citations: {len(citations)} ({len(chunk_citations)} from chunks, {len(llm_citations)} from LLM)")
 
         # Create ReasoningOutput
         reasoning_output = ReasoningOutput(
@@ -369,6 +399,7 @@ async def areasoner_node(state: AgentState) -> AgentState:
             synthesized_insights=reasoning_dict.get("synthesized_insights", []),
             knowledge_gaps=reasoning_dict.get("knowledge_gaps", []),
             citations=citations,
+            has_sufficient_evidence=reasoning_dict.get("has_sufficient_evidence", True),
         )
 
         state["reasoning_output"] = reasoning_output.to_dict()

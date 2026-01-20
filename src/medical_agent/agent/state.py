@@ -231,6 +231,7 @@ class ReasoningOutput:
     synthesized_insights: list[str]
     knowledge_gaps: list[str]
     citations: list[Citation]
+    has_sufficient_evidence: bool = True  # Flag for insufficient information cases
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -240,6 +241,7 @@ class ReasoningOutput:
             "synthesized_insights": self.synthesized_insights,
             "knowledge_gaps": self.knowledge_gaps,
             "citations": [c.to_dict() for c in self.citations],
+            "has_sufficient_evidence": self.has_sufficient_evidence,
         }
 
 
@@ -302,6 +304,9 @@ class AgentState(TypedDict, total=False):
     # --- Retrieval ---
     retrieved_chunks: list[dict[str, Any]]  # List of RetrievedChunk as dicts
     retrieval_query_variations: list[str]
+    retrieval_quality: str  # "sufficient", "insufficient", "low_relevance", "none"
+    retrieval_chunk_count: int  # Number of chunks retrieved
+    retrieval_max_score: float  # Highest similarity score
 
     # --- Risk Assessment ---
     risk_assessment: dict[str, Any]  # RiskAssessment as dict
@@ -359,6 +364,9 @@ def create_initial_state(
         query_analysis={},
         retrieved_chunks=[],
         retrieval_query_variations=[],
+        retrieval_quality="unknown",  # Initialize as unknown
+        retrieval_chunk_count=0,
+        retrieval_max_score=0.0,
         risk_assessment={},
         reasoning_output={},
         final_response={},
