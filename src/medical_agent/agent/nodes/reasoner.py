@@ -192,7 +192,7 @@ def build_default_reasoning(
     retrieval_quality = state.get("retrieval_quality", "unknown")
     has_sufficient_evidence = (
         retrieval_quality == "sufficient" and
-        len(chunks) >= 3
+        len(chunks) >= 2  # Match updated threshold from retriever
     )
 
     # Build evidence summary from chunks

@@ -22,6 +22,7 @@ st.set_page_config(
     page_title="Paper Management",
     page_icon="📚",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 # Check if user is admin
@@ -64,19 +65,26 @@ async def delete_paper(paper_id: str, delete_from_gcp: bool = True):
 # Professional styling
 st.markdown("""
 <style>
+    /* Global Styles */
+    h1, h2, h3 {
+        color: #8BC34A !important;
+    }
+    
     .success-box {
-        background: #d4edda;
+        background: #1B5E20; /* Dark Green bg */
         padding: 0.75rem;
         border-radius: 4px;
-        border-left: 4px solid #28a745;
+        border-left: 4px solid #66BB6A;
         margin: 0.5rem 0;
+        color: #E8F5E9;
     }
     .info-box {
-        background: #d1ecf1;
+        background: #01579B;
         padding: 0.75rem;
         border-radius: 4px;
-        border-left: 4px solid #17a2b8;
+        border-left: 4px solid #29B6F6;
         margin: 0.5rem 0;
+        color: #E1F5FE;
     }
 </style>
 """, unsafe_allow_html=True)

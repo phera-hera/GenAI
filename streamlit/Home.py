@@ -7,13 +7,14 @@ Role-based interface:
 """
 
 import streamlit as st
+import time
 
 # Page config
 st.set_page_config(
     page_title="pHera Medical Agent",
     page_icon="🔬",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # Initialize session state for user role
@@ -22,87 +23,84 @@ if "user_role" not in st.session_state:
 if "api_base_url" not in st.session_state:
     st.session_state.api_base_url = "http://localhost:8000"
 
-# Main title with professional styling
+# Styling
 st.markdown("""
 <style>
+    /* Global Styles */
+    .stApp {
+        background-color: #050505; /* Ultra Dark background */
+        color: #e0e0e0;
+    }
+    
+    /* Header Styles - pHera Logo Text */
     .main-header {
-        font-size: 2.5rem;
-        font-weight: 300;
-        color: #2c3e50;
-        margin-bottom: 0.5rem;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        font-size: 6rem;
+        font-weight: 800;
+        background: linear-gradient(to right, #1b5e20, #4caf50);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.1rem;
+        text-align: center;
+        margin-top: 2rem;
+        letter-spacing: -3px;
     }
+    
+    /* Sub-header / Tagline */
     .sub-header {
-        font-size: 1.1rem;
-        color: #7f8c8d;
-        font-weight: 300;
-        margin-bottom: 2rem;
-    }
-    .role-card {
-        padding: 1.5rem;
-        border-radius: 8px;
-        border: 1px solid #e0e0e0;
-        background: #fafafa;
-        margin-bottom: 1rem;
-    }
-    .role-title {
-        font-size: 1.3rem;
+        font-family: 'Helvetica Neue', serif;
+        font-size: 1.8rem;
+        color: #81c784; /* Soft Green */
         font-weight: 500;
-        color: #2c3e50;
-        margin-bottom: 0.5rem;
+        margin-bottom: 3rem;
+        text-align: center;
+        line-height: 1.4;
+        font-style: italic;
     }
-    .role-desc {
-        color: #5a6c7d;
-        font-size: 0.95rem;
-        line-height: 1.5;
+    
+    /* Custom Button Styling - Primary Action */
+    div.stButton > button:first-child {
+        background-color: #0a2f10; /* Very Dark Green */
+        color: #a5d6a7; /* Pale Green Text */
+        border: 1px solid #1b5e20;
+        border-radius: 8px;
+        padding: 0.75rem 2rem;
+        font-size: 1.2rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+    }
+    div.stButton > button:first-child:hover {
+        background-color: #1b5e20;
+        box-shadow: 0 0 20px rgba(27, 94, 32, 0.6);
+        border-color: #2e7d32;
+        color: white;
+    }
+    
+    /* Hide sidebar by default if user is not admin */
+    [data-testid="stSidebar"] {
+        display: none;
+    }
+    
+    /* Expander Styling */
+    .streamlit-expanderHeader {
+        color: #4caf50 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-header">pHera Medical Agent</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Vaginal Health Analysis Platform</div>', unsafe_allow_html=True)
-st.markdown("---")
-
-# Role selection if not set
-if st.session_state.user_role is None:
-    st.markdown("### Select Your Role")
-    st.markdown("")
-
-    col1, col2 = st.columns(2, gap="large")
-
-    with col1:
-        st.markdown("#### User Mode")
-        st.markdown("""
-        **Test pH analysis only**
-
-        Access to pH analysis testing for doctors, scientists, and researchers.
-        """)
-
-        if st.button("Continue as User", use_container_width=True, type="primary"):
-            st.session_state.user_role = "user"
-            st.rerun()
-
-    with col2:
-        st.markdown("#### Admin Mode")
-        st.markdown("""
-        **Full system access**
-
-        Paper management, ingestion, system monitoring, and pH analysis testing.
-        """)
-
-        admin_password = st.text_input("Admin Password", type="password", key="admin_pass")
-
-        if st.button("Continue as Admin", use_container_width=True):
-            if admin_password == st.secrets.get("admin_password", "admin123"):
-                st.session_state.user_role = "admin"
-                st.rerun()
-            else:
-                st.error("Invalid admin password")
-
-else:
-    # Show current role and allow switching
-    st.sidebar.markdown(f"**Current Role:** {st.session_state.user_role.title()}")
+# Admin logic - Show sidebar only for admin
+if st.session_state.user_role == "admin":
+    st.markdown("""
+    <style>
+        [data-testid="stSidebar"] {
+            display: block !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
     
-    # API Configuration in sidebar
+    # Sidebar content for Admin
+    st.sidebar.markdown(f"**Current Role:** {st.session_state.user_role.title()}")
     st.sidebar.markdown("---")
     st.sidebar.subheader("API Configuration")
     st.session_state.api_base_url = st.sidebar.text_input(
@@ -110,29 +108,45 @@ else:
         value=st.session_state.api_base_url,
         help="Base URL of the Medical Agent API"
     )
-    
     st.sidebar.markdown("---")
-    if st.sidebar.button("Switch Role / Logout", use_container_width=True):
+    if st.sidebar.button("Logout", use_container_width=True):
         st.session_state.user_role = None
         st.rerun()
+
+# Logic for logged in User (Redirect to testing)
+if st.session_state.user_role == "user":
+    st.switch_page("pages/1_Test_pH_Analysis.py")
+
+# Main Landing Page Content (When not logged in)
+if st.session_state.user_role is None:
+    # Centered Layout
+    col1, col2, col3 = st.columns([1, 2, 1])
     
-    # Welcome message based on role
-    if st.session_state.user_role == "user":
-        st.markdown("""
-        <div style="padding: 1rem; background: #e8f4f8; border-left: 4px solid #3498db; border-radius: 4px; margin-bottom: 1.5rem;">
-            <strong>User Mode</strong><br/>
-            <span style="color: #5a6c7d;">Navigate to <strong>Test pH Analysis</strong> in the sidebar to begin testing.</span>
-        </div>
-        """, unsafe_allow_html=True)
+    with col2:
+        # Logo Text
+        st.markdown('<div class="main-header">pHera</div>', unsafe_allow_html=True)
+        
+        # New Tagline
+        st.markdown('<div class="sub-header">The first ultra-precise and personalised<br>vaginal health test</div>', unsafe_allow_html=True)
+        
+        # Start Button
+        if st.button("Start pH Analysis", type="primary", use_container_width=True):
+            st.session_state.user_role = "user"
+            st.rerun()
+            
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
+        
+        # Discreet Admin Access
+        with st.expander("Admin Access"):
+            admin_password = st.text_input("Password", type="password", key="admin_pass")
+            if st.button("Login as Admin"):
+                if admin_password == st.secrets.get("admin_password", "admin123"):
+                    st.session_state.user_role = "admin"
+                    st.rerun()
+                else:
+                    st.error("Invalid password")
 
-    elif st.session_state.user_role == "admin":
-        st.markdown("""
-        <div style="padding: 1rem; background: #fef5e7; border-left: 4px solid #f39c12; border-radius: 4px; margin-bottom: 1.5rem;">
-            <strong>Admin Mode</strong><br/>
-            <span style="color: #5a6c7d;">Access all features via the sidebar.</span>
-        </div>
-        """, unsafe_allow_html=True)
-
-# Footer
-st.markdown("---")
-st.caption("pHera Medical Agent - Confidential Testing Environment")
+elif st.session_state.user_role == "admin":
+    # Admin Dashboard Landing
+    st.markdown("## Admin Dashboard")
+    st.info("Welcome Admin. Use the sidebar to manage papers, monitor API health, or test the analysis.")

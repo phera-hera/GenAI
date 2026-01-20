@@ -178,8 +178,8 @@ async def aretriever_node(state: AgentState) -> AgentState:
 
         # Check retrieval quality
         retrieval_quality = "sufficient"
-        min_chunks_threshold = 3  # Require at least 3 chunks for sufficient evidence
-        min_score_threshold = 0.5  # Require reasonable relevance
+        min_chunks_threshold = 2  # Require at least 2 chunks (was 3, too strict)
+        min_score_threshold = 0.3  # Lower threshold for vector similarity (was 0.5, too strict)
 
         if not retrieved_chunks:
             retrieval_quality = "none"

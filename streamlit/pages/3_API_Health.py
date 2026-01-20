@@ -13,6 +13,7 @@ st.set_page_config(
     page_title="API Health",
     page_icon="🏥",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 # Check if user is logged in
@@ -32,12 +33,17 @@ API_BASE_URL = st.session_state.get("api_base_url", "http://localhost:8000")
 # Professional styling
 st.markdown("""
 <style>
+    /* Global Styles */
+    h1, h2, h3 {
+        color: #8BC34A !important;
+    }
+    
     .status-good {
-        color: #28a745;
+        color: #76FF03;
         font-weight: bold;
     }
     .status-bad {
-        color: #dc3545;
+        color: #FF1744;
         font-weight: bold;
     }
 </style>
