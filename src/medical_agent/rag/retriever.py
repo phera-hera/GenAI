@@ -337,23 +337,17 @@ class MedicalPaperRetriever(BaseRetriever):
 
         Uses Reciprocal Rank Fusion (RRF) to combine results.
         """
-        import asyncio
-
         query_text = query_bundle.query_str
 
-        # Run both searches in parallel
+        # Run searches sequentially to avoid concurrent session usage
         if self._session:
-            semantic_results, bm25_results = await asyncio.gather(
-                self._semantic_search(query_bundle),
-                self._bm25_search(query_text),
-            )
+            semantic_results = await self._semantic_search(query_bundle)
+            bm25_results = await self._bm25_search(query_text)
         else:
             async with get_session_context() as session:
                 self._session = session
-                semantic_results, bm25_results = await asyncio.gather(
-                    self._semantic_search(query_bundle),
-                    self._bm25_search(query_text),
-                )
+                semantic_results = await self._semantic_search(query_bundle)
+                bm25_results = await self._bm25_search(query_text)
                 self._session = None
 
         logger.debug(

@@ -83,6 +83,47 @@ def format_citations_for_display(citations: list[dict[str, Any]]) -> list[str]:
     return formatted
 
 
+def ensure_citations_in_response(
+    response_dict: dict[str, Any],
+    reasoning_output: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Ensure citations are present in the formatted response.
+
+    Args:
+        response_dict: Response payload from LLM or template
+        reasoning_output: Reasoning output containing raw citations
+
+    Returns:
+        Updated response_dict with citations_formatted and references section
+    """
+    formatted = response_dict.get("citations_formatted", [])
+    if not formatted:
+        formatted = format_citations_for_display(reasoning_output.get("citations", []))
+        response_dict["citations_formatted"] = formatted
+
+    if not formatted:
+        return response_dict
+
+    full_response = response_dict.get("full_response", "")
+    if not full_response:
+        return response_dict
+
+    # Avoid duplicating references if already present
+    lower_full = full_response.lower()
+    has_references_header = "references" in lower_full or "citations" in lower_full
+    has_any_citation = any(cit in full_response for cit in formatted)
+
+    if has_references_header or has_any_citation:
+        return response_dict
+
+    references_block = "\n".join(formatted[:5])
+    response_dict["full_response"] = (
+        full_response.rstrip() + "\n\n### References\n\n" + references_block
+    )
+    return response_dict
+
+
 def format_evidence_for_prompt(reasoning_output: dict[str, Any]) -> str:
     """
     Format evidence summary for the response generator prompt.
@@ -370,6 +411,12 @@ async def aresponse_generator_node(state: AgentState) -> AgentState:
             response_dict = llm_response
         else:
             response_dict = build_templated_response(state)
+
+        # Ensure citations are present in the response text (LLM may omit)
+        response_dict = ensure_citations_in_response(
+            response_dict=response_dict,
+            reasoning_output=state.get("reasoning_output", {}),
+        )
 
         # Ensure disclaimer is present
         if "disclaimer" not in response_dict.get("full_response", "").lower():
