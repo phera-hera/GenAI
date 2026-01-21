@@ -1,8 +1,8 @@
 """
-Medical Metadata Extractor
+Medical Metadata Extractor - Utility Component
 
-Orchestrates extraction and normalization of medical metadata from parsed documents.
-Runs after parsing, before chunking, and stamps metadata onto every chunk.
+Extracts and normalizes medical metadata from parsed documents.
+Used by the LlamaIndex ingestion pipeline via LlamaIndexMedicalMetadataExtractor wrapper.
 """
 
 import logging

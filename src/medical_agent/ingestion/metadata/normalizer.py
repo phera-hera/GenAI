@@ -1,8 +1,8 @@
 """
-Term Normalizer for Medical Metadata
+Term Normalizer - Utility Component
 
-Maps extracted medical terms to standardized dropdown values from user_input.pdf.
-Handles synonyms, abbreviations, and variations to ensure consistent terminology.
+Normalizes medical terms to standardized dropdown values.
+Used by MedicalMetadataExtractor (which is wrapped by LlamaIndex pipeline).
 """
 
 import logging

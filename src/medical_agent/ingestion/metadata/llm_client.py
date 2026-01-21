@@ -1,8 +1,8 @@
 """
-LLM Client for Metadata Extraction
+Metadata LLM Client - Utility Component
 
-Uses Azure OpenAI GPT-4o with structured output to extract medical metadata
-from research papers. Only extracts explicitly mentioned terms - never hallucinates relevance.
+LLM client for metadata extraction operations.
+Used by MedicalMetadataExtractor (which is wrapped by LlamaIndex pipeline).
 """
 
 import json

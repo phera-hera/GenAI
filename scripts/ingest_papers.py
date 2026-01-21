@@ -23,7 +23,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from medical_agent.core.config import settings
 from medical_agent.infrastructure.gcp_storage import get_storage_client
 from medical_agent.infrastructure.database.session import init_db, get_session_context
-from medical_agent.ingestion.pipeline import IngestionPipeline, PipelineConfig, PipelineResult
+from medical_agent.ingestion.llamaindex_pipeline import (
+    LlamaIndexIngestionPipeline,
+    LlamaIndexPipelineConfig,
+    LlamaIndexPipelineResult,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,9 +44,9 @@ class IngestionProgress:
         self.completed = 0
         self.succeeded = 0
         self.failed = 0
-        self.results: list[PipelineResult] = []
+        self.results: list[LlamaIndexPipelineResult] = []
 
-    def update(self, result: PipelineResult) -> None:
+    def update(self, result: LlamaIndexPipelineResult) -> None:
         self.completed += 1
         self.results.append(result)
         if result.success:
@@ -159,8 +163,8 @@ async def ingest_papers(
         return IngestionProgress(len(pdf_files))
 
     # Initialize pipeline
-    pipeline = IngestionPipeline(
-        config=PipelineConfig(
+    pipeline = LlamaIndexIngestionPipeline(
+        config=LlamaIndexPipelineConfig(
             max_chunk_chars=1200,
             include_tables=True,
             embedding_batch_size=50,
@@ -204,7 +208,7 @@ async def ingest_papers(
             logger.error(f"ERROR processing {gcp_path}: {e}")
             # Create a failed result
             from uuid import uuid4
-            failed_result = PipelineResult(
+            failed_result = LlamaIndexPipelineResult(
                 paper_id=uuid4(),
                 paper_title=None,
                 gcp_path=gcp_path,

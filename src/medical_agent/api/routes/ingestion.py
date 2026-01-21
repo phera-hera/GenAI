@@ -3,6 +3,8 @@ Ingestion API Routes
 
 Provides endpoints for ingesting and managing medical papers in the vector store.
 Supports GCP Cloud Storage integration for automated paper ingestion.
+
+Uses LlamaIndex-based ingestion pipeline with Docling for PDF parsing.
 """
 
 import asyncio
@@ -27,21 +29,13 @@ from medical_agent.api.schemas import (
 from medical_agent.core.config import settings
 from medical_agent.infrastructure.gcp_storage import get_storage_client
 
-# Feature flag to toggle between old and new ingestion pipelines
-USE_LLAMAINDEX_PIPELINE = os.getenv("USE_LLAMAINDEX_PIPELINE", "false").lower() == "true"
-
-if USE_LLAMAINDEX_PIPELINE:
-    from medical_agent.ingestion.llamaindex_pipeline import (
-        LlamaIndexIngestionPipeline,
-        process_pdf_llamaindex,
-    )
-    logger_pipeline_type = "LlamaIndex"
-else:
-    from medical_agent.ingestion.pipeline import IngestionPipeline, process_pdf
-    logger_pipeline_type = "Custom"
+from medical_agent.ingestion.llamaindex_pipeline import (
+    LlamaIndexIngestionPipeline,
+    process_pdf_llamaindex,
+)
 
 logger = logging.getLogger(__name__)
-logger.info(f"Using {logger_pipeline_type} ingestion pipeline (USE_LLAMAINDEX_PIPELINE={USE_LLAMAINDEX_PIPELINE})")
+logger.info("Using LlamaIndex ingestion pipeline")
 
 router = APIRouter(prefix="/api/v1", tags=["Ingestion"])
 
@@ -291,17 +285,11 @@ async def _ingest_single_paper(
             with open(tmp_path, "rb") as f:
                 pdf_content = f.read()
 
-            # Use appropriate pipeline based on feature flag
-            if USE_LLAMAINDEX_PIPELINE:
-                result = await process_pdf_llamaindex(
-                    pdf_content=pdf_content,
-                    gcp_path=gcp_path,
-                )
-            else:
-                result = await process_pdf(
-                    pdf_content=pdf_content,
-                    gcp_path=gcp_path,
-                )
+            # Use LlamaIndex pipeline
+            result = await process_pdf_llamaindex(
+                pdf_content=pdf_content,
+                gcp_path=gcp_path,
+            )
 
             # Extract pipeline results
             pipeline_duration = int((time.time() - stage_start) * 1000)
