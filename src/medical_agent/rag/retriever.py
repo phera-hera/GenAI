@@ -28,7 +28,8 @@ from medical_agent.core.exceptions import DatabaseException
 from medical_agent.infrastructure.database.models import ChunkType
 from medical_agent.infrastructure.database.session import get_session_context
 from medical_agent.ingestion.embedders.azure_embedder import get_async_embedder
-from medical_agent.ingestion.storage.vector_store import SearchQuery, SearchResult, VectorStore
+from medical_agent.ingestion.storage.types import SearchQuery, SearchResult
+from medical_agent.ingestion.storage.vector_store import MedicalPGVectorStore
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -149,7 +150,7 @@ class MedicalPaperRetriever(BaseRetriever):
     """
     Custom retriever for medical paper chunks with hybrid search support.
 
-    Wraps the pgvector-based VectorStore and provides LlamaIndex-compatible
+    Wraps the pgvector-based MedicalPGVectorStore and provides LlamaIndex-compatible
     retrieval with hybrid search (semantic + BM25) and advanced features.
 
     This retriever:
@@ -162,14 +163,14 @@ class MedicalPaperRetriever(BaseRetriever):
 
     Args:
         config: RetrievalConfig with search settings
-        vector_store: Optional VectorStore instance
+        vector_store: Optional MedicalPGVectorStore instance
         session: Optional AsyncSession for database operations
     """
 
     def __init__(
         self,
         config: RetrievalConfig | None = None,
-        vector_store: VectorStore | None = None,
+        vector_store: MedicalPGVectorStore | None = None,
         session: AsyncSession | None = None,
     ):
         super().__init__()
@@ -179,10 +180,10 @@ class MedicalPaperRetriever(BaseRetriever):
         self._embedder = get_async_embedder()
 
     @property
-    def vector_store(self) -> VectorStore:
+    def vector_store(self) -> MedicalPGVectorStore:
         """Get or create the vector store."""
         if self._vector_store is None:
-            self._vector_store = VectorStore()
+            self._vector_store = MedicalPGVectorStore()
         return self._vector_store
 
     def _retrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:

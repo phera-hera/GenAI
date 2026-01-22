@@ -29,10 +29,7 @@ from medical_agent.api.schemas import (
 from medical_agent.core.config import settings
 from medical_agent.infrastructure.gcp_storage import get_storage_client
 
-from medical_agent.ingestion.llamaindex_pipeline import (
-    LlamaIndexIngestionPipeline,
-    process_pdf_llamaindex,
-)
+from medical_agent.ingestion.pipeline import MedicalIngestionPipeline, process_pdf_llamaindex
 
 logger = logging.getLogger(__name__)
 logger.info("Using LlamaIndex ingestion pipeline")

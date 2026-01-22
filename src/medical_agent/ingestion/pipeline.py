@@ -2,14 +2,15 @@
 LlamaIndex-Based Ingestion Pipeline
 
 Modern ingestion pipeline using LlamaIndex components to:
-1. Parse PDFs with DoclingReader (JSON export for structured tables)
-2. Chunk with DoclingNodeParser (section-aware)
+1. Parse PDFs with DoclingReader (JSON export for structured tables AND sections)
+2. Chunk with DoclingNodeParser + HybridChunker (section-aware + token-limited)
 3. Extract medical metadata (8 fields)
 4. Generate embeddings (Azure OpenAI)
 5. Store in pgvector
 
-This pipeline fixes table extraction issues by using JSON export instead of
-markdown, while maintaining compatibility with existing storage and retrieval.
+HybridChunker combines hierarchical structure (sections, paragraphs, tables) with
+token awareness (max 512 tokens per chunk) to prevent embedding truncation while
+preserving document structure.
 """
 
 import hashlib
@@ -21,10 +22,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from docling.chunking import HybridChunker
 from llama_index.core.ingestion import IngestionPipeline
-from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import Document
 from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
+from llama_index.node_parser.docling import DoclingNodeParser
 from llama_index.readers.docling import DoclingReader
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,22 +35,18 @@ from medical_agent.core.config import settings
 from medical_agent.core.exceptions import DatabaseException
 from medical_agent.infrastructure.database.models import Paper
 from medical_agent.infrastructure.database.session import get_session_context
-from medical_agent.ingestion.metadata.llamaindex_extractor import (
-    LlamaIndexMedicalMetadataExtractor,
-)
-from medical_agent.ingestion.storage.llamaindex_vector_store import (
-    MedicalPGVectorStore,
-)
+from medical_agent.ingestion.metadata.extractor import MedicalMetadataExtractor
+from medical_agent.ingestion.storage.vector_store import MedicalPGVectorStore
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class LlamaIndexPipelineConfig:
+class PipelineConfig:
     """Configuration for the LlamaIndex ingestion pipeline."""
 
     # Docling reader settings
-    docling_export_type: str = "json"  # Use JSON for structured tables
+    docling_export_type: str = "json"  # Use JSON for structured tables AND section metadata
     docling_enable_ocr: bool = True  # Auto OCR for scanned papers
     docling_table_structure_mode: str = "accurate"  # TableFormer accurate mode
 
@@ -59,9 +57,10 @@ class LlamaIndexPipelineConfig:
     # Storage settings
     delete_existing_chunks: bool = True  # Delete old chunks before re-ingestion
 
-    # Chunking settings
-    chunk_size: int = 1200  # Match existing pipeline max_chunk_chars
-    chunk_overlap: int = 0  # No overlap - sections are semantically bounded
+    # Chunking settings for HybridChunker
+    max_chunk_tokens: int = 512   # Maximum tokens per chunk (prevents embedding truncation)
+    min_chunk_tokens: int = 64    # Minimum tokens per chunk (avoids tiny chunks)
+    merge_small_chunks: bool = True  # Merge small adjacent chunks
 
     # Embedding settings
     embedding_model: str = "text-embedding-3-large"
@@ -69,7 +68,7 @@ class LlamaIndexPipelineConfig:
 
 
 @dataclass
-class LlamaIndexPipelineResult:
+class PipelineResult:
     """Result of a complete LlamaIndex pipeline run."""
 
     paper_id: uuid.UUID
@@ -117,7 +116,7 @@ class LlamaIndexPipelineResult:
         return "\n".join(lines)
 
 
-class LlamaIndexIngestionPipeline:
+class MedicalIngestionPipeline:
     """
     LlamaIndex-based ingestion pipeline for medical papers.
 
@@ -135,10 +134,10 @@ class LlamaIndexIngestionPipeline:
 
     def __init__(
         self,
-        config: LlamaIndexPipelineConfig | None = None,
+        config: PipelineConfig | None = None,
         vector_store: MedicalPGVectorStore | None = None,
     ):
-        self.config = config or LlamaIndexPipelineConfig()
+        self.config = config or PipelineConfig()
         self.vector_store = vector_store or MedicalPGVectorStore()
 
         # Initialize Docling reader with optimal settings
@@ -173,15 +172,22 @@ class LlamaIndexIngestionPipeline:
         )
 
         # Initialize metadata extractor
-        self.metadata_extractor = LlamaIndexMedicalMetadataExtractor(
+        self.metadata_extractor = MedicalMetadataExtractor(
             extract_table_summaries=self.config.extract_table_summaries,
         )
 
-        # Initialize node parser for chunking
-        self.node_parser = SentenceSplitter(
-            chunk_size=self.config.chunk_size,
-            chunk_overlap=self.config.chunk_overlap,
+        # Initialize HybridChunker for token-aware section chunking
+        hybrid_chunker = HybridChunker(
+            tokenizer="cl100k_base",  # Match text-embedding-3-large tokenizer
+            max_tokens=self.config.max_chunk_tokens,  # Prevent embedding truncation
+            min_tokens=self.config.min_chunk_tokens,  # Avoid tiny chunks
+            merge_peers=self.config.merge_small_chunks,  # Merge small adjacent chunks
+            heading_as_metadata=True,  # Preserve section hierarchy
         )
+
+        # Initialize DoclingNodeParser with HybridChunker
+        # Splits Docling JSON by structure + enforces token limits
+        self.node_parser = DoclingNodeParser(chunker=hybrid_chunker)
 
         # Build ingestion pipeline
         self.pipeline = IngestionPipeline(
@@ -225,7 +231,7 @@ class LlamaIndexIngestionPipeline:
         paper_id: uuid.UUID | None = None,
         skip_duplicate_check: bool = False,
         progress_callback: Callable | None = None,
-    ) -> LlamaIndexPipelineResult:
+    ) -> PipelineResult:
         """
         Process a PDF through the LlamaIndex ingestion pipeline.
 
@@ -238,12 +244,12 @@ class LlamaIndexIngestionPipeline:
             progress_callback: Optional callback(stage, progress) for updates
 
         Returns:
-            LlamaIndexPipelineResult with processing details
+            PipelineResult with processing details
         """
         start_time = time.monotonic()
 
         # Initialize result
-        result = LlamaIndexPipelineResult(
+        result = PipelineResult(
             paper_id=paper_id or uuid.uuid4(),
             paper_title=None,
             gcp_path=gcp_path,
@@ -434,7 +440,7 @@ class LlamaIndexIngestionPipeline:
         session: AsyncSession,
         paper_id: uuid.UUID,
         pdf_content: bytes,
-    ) -> LlamaIndexPipelineResult:
+    ) -> PipelineResult:
         """
         Reprocess an existing paper.
 
@@ -444,7 +450,7 @@ class LlamaIndexIngestionPipeline:
             pdf_content: Raw PDF bytes
 
         Returns:
-            LlamaIndexPipelineResult with processing details
+            PipelineResult with processing details
         """
         # Get existing paper
         stmt = select(Paper).where(Paper.id == paper_id)
@@ -469,8 +475,8 @@ class LlamaIndexIngestionPipeline:
 async def process_pdf_llamaindex(
     pdf_content: bytes,
     gcp_path: str,
-    config: LlamaIndexPipelineConfig | None = None,
-) -> LlamaIndexPipelineResult:
+    config: PipelineConfig | None = None,
+) -> PipelineResult:
     """
     Process a PDF through the LlamaIndex ingestion pipeline.
 
@@ -482,9 +488,9 @@ async def process_pdf_llamaindex(
         config: Optional pipeline configuration
 
     Returns:
-        LlamaIndexPipelineResult with processing details
+        PipelineResult with processing details
     """
-    pipeline = LlamaIndexIngestionPipeline(config=config)
+    pipeline = MedicalIngestionPipeline(config=config)
 
     async with get_session_context() as session:
         return await pipeline.process_paper(
