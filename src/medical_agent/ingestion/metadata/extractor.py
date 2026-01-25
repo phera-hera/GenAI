@@ -1,9 +1,4 @@
-"""
-LlamaIndex Medical Metadata Extractor
-
-Extracts document-level medical metadata from LlamaIndex nodes by implementing
-the BaseExtractor interface. Stamps medical metadata onto all nodes for filtering.
-"""
+"""LlamaIndex BaseExtractor for stamping medical metadata onto nodes."""
 
 import logging
 from typing import Any, Sequence
@@ -14,27 +9,17 @@ from llama_index.core.schema import BaseNode, TextNode
 from medical_agent.core.config import settings
 from medical_agent.ingestion.metadata.llm_client import MetadataLLMClient, get_metadata_llm_client
 from medical_agent.ingestion.metadata.normalizer import TermNormalizer, get_term_normalizer
-from medical_agent.ingestion.parsers.document_result import ParsedDocument, PaperMetadata, SectionType
 
 logger = logging.getLogger(__name__)
 
 
 class MedicalMetadataExtractor(BaseExtractor):
-    """
-    LlamaIndex-compatible medical metadata extractor.
-
-    Extracts medical metadata once for the entire document and stamps
-    it onto all nodes in the metadata["extracted_metadata"] field.
-
-    Uses LLM client and term normalizer directly to extract and normalize
-    medical terms (ethnicities, diagnoses, symptoms, etc.) from document text.
-    """
+    """Extracts medical metadata once per document and stamps it onto all nodes."""
 
     def __init__(
         self,
         llm_client: MetadataLLMClient | None = None,
         normalizer: TermNormalizer | None = None,
-        extract_table_summaries: bool = True,
         **kwargs,
     ):
         """
@@ -43,145 +28,68 @@ class MedicalMetadataExtractor(BaseExtractor):
         Args:
             llm_client: Optional custom LLM client for extraction
             normalizer: Optional custom term normalizer
-            extract_table_summaries: Whether to extract table summaries
             **kwargs: Additional arguments for BaseExtractor
         """
         super().__init__(**kwargs)
         # Store as private attributes to avoid Pydantic validation
         object.__setattr__(self, "_llm_client", llm_client or get_metadata_llm_client())
         object.__setattr__(self, "_normalizer", normalizer or get_term_normalizer())
-        object.__setattr__(self, "_extract_table_summaries", extract_table_summaries)
         object.__setattr__(self, "_document_cache", {})
 
-    def _extract_relevant_text(self, parsed: ParsedDocument) -> str:
+    def _extract_relevant_text(self, nodes: Sequence[BaseNode]) -> str:
         """
-        Extract relevant text for metadata extraction.
+        Extract relevant text for metadata extraction from LlamaIndex nodes.
 
         Prioritizes:
-        1. Abstract
-        2. Keywords from metadata
-        3. Methods section (first 3 chunks if sections not properly identified)
-
-        Args:
-            parsed: Parsed document
-
-        Returns:
-            Combined text for metadata extraction
-        """
-        parts = []
-
-        # 1. Abstract
-        abstract = parsed.get_abstract()
-        if abstract:
-            parts.append(f"ABSTRACT:\n{abstract}")
-
-        # 2. Keywords
-        if parsed.metadata.keywords:
-            keywords_text = ", ".join(parsed.metadata.keywords)
-            parts.append(f"KEYWORDS: {keywords_text}")
-
-        # 3. Methods section (or introduction if methods not found)
-        methods_section = parsed.get_section(SectionType.METHODS)
-        if methods_section and methods_section.content:
-            # Limit methods section to avoid token overflow
-            methods_text = methods_section.content[:2000]
-            parts.append(f"METHODS:\n{methods_text}")
-        else:
-            # Fallback: use introduction or first section
-            intro_section = parsed.get_section(SectionType.INTRODUCTION)
-            if intro_section and intro_section.content:
-                intro_text = intro_section.content[:1500]
-                parts.append(f"INTRODUCTION:\n{intro_text}")
-
-        # Combine all parts
-        combined_text = "\n\n".join(parts)
-
-        # If still empty, use first part of full text
-        if not combined_text.strip():
-            combined_text = parsed.full_text[:3000]
-
-        return combined_text
-
-    def _reconstruct_parsed_document(self, nodes: Sequence[BaseNode]) -> ParsedDocument:
-        """
-        Reconstruct a ParsedDocument from LlamaIndex nodes.
-
-        This creates a simplified ParsedDocument that has enough context
-        for the MedicalMetadataExtractor to work with.
+        1. Abstract sections
+        2. Methods sections
+        3. First few nodes
 
         Args:
             nodes: List of LlamaIndex nodes
 
         Returns:
-            ParsedDocument with combined text and metadata
+            Combined text for metadata extraction
         """
-        # Combine all text content from nodes
-        full_text_parts = []
-        abstract_text = None
-        methods_text = None
-        tables = []
-        title = None
+        parts = []
+        abstract_found = False
+        methods_found = False
 
         for node in nodes:
             if not isinstance(node, TextNode):
                 continue
 
             content = node.get_content()
-            full_text_parts.append(content)
-
-            # Extract section-specific content
             section_type = node.metadata.get("section_type", "").lower()
             chunk_type = node.metadata.get("chunk_type", "").lower()
 
-            if "abstract" in section_type or chunk_type == "abstract":
-                abstract_text = content
-            elif "method" in section_type:
-                methods_text = content
-            elif chunk_type == "table":
-                # Note: We can't fully reconstruct table structure from nodes,
-                # but we can pass the table content
-                tables.append(content)
+            # Collect abstract
+            if not abstract_found and ("abstract" in section_type or chunk_type == "abstract"):
+                parts.append(f"ABSTRACT:\n{content[:2000]}")
+                abstract_found = True
 
-            # Get title from first node if available
-            if title is None and "title" in node.metadata:
-                title = node.metadata.get("title")
+            # Collect methods
+            elif not methods_found and "method" in section_type:
+                parts.append(f"METHODS:\n{content[:2000]}")
+                methods_found = True
 
-        full_text = "\n\n".join(full_text_parts)
+            # Stop early if we have enough context
+            if abstract_found and methods_found:
+                break
 
-        # Create paper metadata
-        paper_metadata = PaperMetadata(
-            title=title or "Unknown",
-            abstract=abstract_text,
-        )
+            # Limit parts for token efficiency
+            if len(parts) < 3:
+                parts.append(content[:1500])
 
-        # Create a simplified ParsedDocument
-        # We create a minimal document with the essential fields
-        parsed_doc = ParsedDocument(
-            full_text=full_text,
-            metadata=paper_metadata,
-        )
+        # Combine all parts
+        combined_text = "\n\n".join(parts)
 
-        # If we found abstract or methods text, add them as pseudo-sections
-        # This helps the extractor get better context
-        if abstract_text:
-            from medical_agent.ingestion.parsers.document_result import DocumentSection
-            abstract_section = DocumentSection(
-                section_type=SectionType.ABSTRACT,
-                title="Abstract",
-                content=abstract_text,
-            )
-            parsed_doc.sections.append(abstract_section)
+        # If still empty, use first node content
+        if not combined_text.strip() and nodes:
+            combined_text = nodes[0].get_content()[:3000]
 
-        if methods_text:
-            from medical_agent.ingestion.parsers.document_result import DocumentSection
-            methods_section = DocumentSection(
-                section_type=SectionType.METHODS,
-                title="Methods",
-                content=methods_text,
-            )
-            parsed_doc.sections.append(methods_section)
+        return combined_text
 
-        return parsed_doc
 
     async def aextract(
         self, nodes: Sequence[BaseNode]
@@ -231,11 +139,8 @@ class MedicalMetadataExtractor(BaseExtractor):
                         "table_summaries": {},
                     }
                 else:
-                    # Reconstruct ParsedDocument from nodes
-                    parsed_doc = self._reconstruct_parsed_document(nodes)
-
-                    # Extract relevant text from the document
-                    text = self._extract_relevant_text(parsed_doc)
+                    # Extract relevant text from nodes
+                    text = self._extract_relevant_text(nodes)
 
                     if not text.strip():
                         logger.warning("No text available for metadata extraction")
@@ -252,37 +157,19 @@ class MedicalMetadataExtractor(BaseExtractor):
                                 "age_range": None,
                                 "confidence": 0.0,
                             },
-                            "table_summaries": {},
                         }
                     else:
-                        # Extract medical terms using LLM (direct call)
+                        # Get document title from first node if available
+                        doc_title = nodes[0].metadata.get("title", "research paper") if nodes else "research paper"
+
+                        # Extract medical terms using LLM
                         raw_metadata = await self._llm_client.extract_metadata(
                             text=text,
-                            source_description=parsed_doc.metadata.title or "research paper",
+                            source_description=doc_title,
                         )
 
-                        # Normalize terms to dropdown values (direct call)
+                        # Normalize terms to dropdown values
                         normalized_metadata = self._normalizer.normalize(raw_metadata)
-
-                        # Extract table summaries if requested
-                        table_summaries = {}
-                        if self._extract_table_summaries and parsed_doc.tables:
-                            try:
-                                tables_data = [
-                                    {
-                                        "table_id": table.table_id,
-                                        "markdown": table.to_markdown(),
-                                        "caption": table.caption,
-                                    }
-                                    for table in parsed_doc.tables
-                                ]
-                                table_summary_results = await self._llm_client.summarize_tables(tables_data)
-                                table_summaries = {
-                                    tid: summary.summary for tid, summary in table_summary_results.items()
-                                }
-                                logger.info(f"Extracted {len(table_summaries)} table summaries")
-                            except Exception as e:
-                                logger.warning(f"Failed to extract table summaries: {e}")
 
                         # Convert to dict format for storage
                         cached_metadata = {
@@ -298,7 +185,6 @@ class MedicalMetadataExtractor(BaseExtractor):
                                 "age_range": normalized_metadata.age_range,
                                 "confidence": normalized_metadata.confidence,
                             },
-                            "table_summaries": table_summaries,
                         }
 
                         # Log extraction summary
@@ -319,14 +205,6 @@ class MedicalMetadataExtractor(BaseExtractor):
             result = []
             for node in nodes:
                 node_metadata = cached_metadata["extracted_metadata"].copy()
-
-                # Add table summary if this is a table chunk
-                chunk_type = node.metadata.get("chunk_type")
-                if chunk_type == "table":
-                    table_id = node.metadata.get("table_id")
-                    if table_id is not None and table_id in cached_metadata["table_summaries"]:
-                        node_metadata["table_summary"] = cached_metadata["table_summaries"][table_id]
-
                 result.append(node_metadata)
 
             return result

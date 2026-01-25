@@ -7,7 +7,6 @@ from .pipeline import (
     PipelineResult,
     process_pdf_llamaindex,
 )
-from .storage.vector_store import MedicalPGVectorStore
 
 __all__ = [
     "MedicalIngestionPipeline",
@@ -15,5 +14,4 @@ __all__ = [
     "PipelineResult",
     "process_pdf_llamaindex",
     "MedicalMetadataExtractor",
-    "MedicalPGVectorStore",
 ]

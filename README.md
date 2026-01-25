@@ -31,9 +31,9 @@ This platform takes pH values from test strip photos (provided by a separate CV 
 | Backend | FastAPI |
 | LLM | Azure OpenAI (GPT-4o) |
 | Embeddings | Azure OpenAI (text-embedding-3-large) |
-| Document Parsing | LlamaParser (LlamaCloud) |
-| Vector DB | pgvector (PostgreSQL) |
-| Agent Framework | LangGraph |
+| Document Parsing | Docling (LlamaIndex) |
+| Vector DB | pgvector (PostgreSQL) with hybrid search |
+| Agent Framework | LlamaIndex ReActAgent |
 | RAG Framework | LlamaIndex |
 | Observability | Langfuse |
 | Deployment | GCP Cloud Run |
@@ -118,7 +118,6 @@ Medical_Agent/
 │       ├── infrastructure/               # External services & integrations
 │       │   ├── azure_openai.py          # Azure OpenAI client
 │       │   ├── langfuse_client.py       # Observability client
-│       │   ├── llama_parser.py          # PDF parsing client
 │       │   ├── gcp_storage.py           # GCP Cloud Storage client
 │       │   └── database/                # Database layer
 │       │       ├── models.py            # SQLAlchemy models
@@ -126,33 +125,20 @@ Medical_Agent/
 │       │       └── base.py              # Base classes
 │       │
 │       ├── ingestion/                   # Document processing pipeline
-│       │   ├── pipeline.py              # Main orchestrator
-│       │   ├── parsers/                 # PDF parsing
-│       │   ├── chunkers/                # Medical paper chunking
-│       │   ├── embedders/               # Embedding generation
-│       │   └── storage/                 # Vector storage operations
+│       │   ├── pipeline.py              # LlamaIndex ingestion pipeline
+│       │   │                            # (Docling + HybridChunker + Metadata + Embeddings)
+│       │   └── metadata/                # Medical metadata extraction
 │       │
-│       ├── rag/                         # Retrieval-Augmented Generation
-│       │   ├── index.py                 # LlamaIndex setup
-│       │   ├── retriever.py             # Hybrid retriever (semantic + BM25)
-│       │   └── query_engine.py          # Query processing
-│       │
-│       ├── agent/                       # LangGraph medical reasoning workflow
-│       │   ├── graph.py                 # Workflow definition
-│       │   ├── state.py                 # Agent state schema
-│       │   ├── nodes/                   # Individual agent nodes
-│       │   │   ├── query_analyzer.py   # pH parsing & query generation
-│       │   │   ├── retriever.py        # Context retrieval
-│       │   │   ├── risk_assessor.py    # Risk level determination
-│       │   │   ├── reasoner.py         # Evidence synthesis
-│       │   │   └── response_generator.py # Final response formatting
-│       │   └── prompts/                 # System prompts and templates
+│       ├── agent/                       # Medical reasoning agent
+│       │   └── react_agent.py          # LlamaIndex ReActAgent
+│       │                                # (Replaces LangGraph multi-node workflow)
 │       │
 │       └── api/                         # Web layer (FastAPI)
 │           ├── main.py                  # Application entry point
 │           ├── schemas.py               # Pydantic request/response models
 │           └── routes/                  # API endpoints
-│               └── health.py            # Health check endpoints
+│               ├── health.py            # Health check endpoints
+│               └── query.py             # pH analysis endpoint
 │
 ├── tests/                               # Test suite
 ├── scripts/                             # CLI utilities
@@ -167,13 +153,18 @@ Medical_Agent/
 
 ### Architecture Layers
 
-The project follows clean architecture principles with clear dependency flow:
+The project follows clean architecture with clear separation of concerns:
 
 ```
-api → agent → rag → ingestion → infrastructure → core
+api (FastAPI) → agent (ReActAgent) → ingestion (LlamaIndex pipeline) → infrastructure → core
 ```
 
-Each layer only imports from layers below it, ensuring no circular dependencies.
+**Layer responsibilities:**
+- **api**: HTTP endpoints and request/response handling
+- **agent**: Medical reasoning with LlamaIndex ReActAgent
+- **ingestion**: Document processing (Docling parsing, chunking, embeddings, metadata extraction)
+- **infrastructure**: External services (Azure OpenAI, GCP Storage, PostgreSQL, Langfuse)
+- **core**: Configuration and domain exceptions
 
 ## Risk Assessment Logic
 
@@ -196,29 +187,26 @@ pytest
 The project uses the `src/` layout. All imports use the `medical_agent` namespace:
 
 ```python
-# Core configuration and exceptions
+# Core configuration
 from medical_agent.core.config import settings
 from medical_agent.core.exceptions import AppException
 
-# Infrastructure services
-from medical_agent.infrastructure.azure_openai import get_openai_client
-from medical_agent.infrastructure.database.models import Paper, User
+# Infrastructure (LlamaIndex factories)
+from medical_agent.infrastructure import get_llama_index_llm, get_llama_index_embed_model
+from medical_agent.infrastructure.database.models import Paper, PaperChunk
 
 # Ingestion pipeline
-from medical_agent.ingestion.pipeline import IngestionPipeline
+from medical_agent.ingestion.pipeline import MedicalIngestionPipeline, PipelineConfig
+from medical_agent.ingestion.metadata import MedicalMetadataExtractor, ExtractedMetadata
 
-# RAG components
-from medical_agent.rag.retriever import MedicalPaperRetriever
-from medical_agent.rag.query_engine import create_query_engine
-
-# Agent workflow
-from medical_agent.agent.graph import run_medical_agent
+# Agent (LlamaIndex ReActAgent)
+from medical_agent.agent.react_agent import MedicalAnalysisResponse
 
 # API application
-from medical_agent.api.main import create_application
+from medical_agent.api.main import app
 ```
 
-When running scripts outside the virtual environment, ensure `PYTHONPATH` includes the `src` directory:
+When running scripts outside the virtual environment:
 ```bash
 PYTHONPATH=src python scripts/your_script.py
 ```
@@ -283,7 +271,6 @@ See `.env.example` for all available configuration options. Key variables:
 | `DATABASE_URL` | PostgreSQL connection string |
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI API key |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL |
-| `LLAMA_CLOUD_API_KEY` | LlamaCloud API key for PDF parsing |
 | `GCP_PROJECT_ID` | GCP project for Cloud Storage |
 | `GCP_BUCKET_NAME` | Cloud Storage bucket name |
 | `LANGFUSE_PUBLIC_KEY` | Langfuse observability key |
@@ -297,16 +284,10 @@ See `.env.example` for all available configuration options. Key variables:
 - `GET /health/live` - Kubernetes liveness probe
 - `GET /health/cloud-services` - Cloud services connectivity check
 
-### Query (Coming Soon)
-- `POST /api/v1/query` - Submit pH reading for analysis
+### Query
+- `POST /api/v1/query` - Submit pH reading for analysis with health profile
 
-### Papers (Coming Soon)
-- `GET /api/v1/papers` - List ingested papers
-- `POST /api/v1/papers/ingest` - Trigger paper ingestion
-
-### Users (Coming Soon)
-- `POST /api/v1/users` - Create user profile
-- `GET /api/v1/users/{id}/profile` - Get health profile
+For detailed API documentation, visit http://localhost:8000/docs when the server is running.
 
 ## License
 

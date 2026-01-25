@@ -194,26 +194,20 @@ class CloudServicesStatus(BaseModel):
 async def cloud_services_check() -> CloudServicesStatus:
     """
     Check connectivity to all external cloud services.
-    
-    Tests actual connections to:
+
+    Tests connections to:
     - GCP Cloud Storage
     - Azure OpenAI
-    - LlamaParser
     - Langfuse
-    
-    Note: This endpoint may take a few seconds as it tests real connections.
     """
     services: dict[str, dict[str, Any]] = {}
-    
+
     # Check GCP Storage
     services["gcp_storage"] = await _check_gcp_storage()
-    
+
     # Check Azure OpenAI
     services["azure_openai"] = await _check_azure_openai()
-    
-    # Check LlamaParser
-    services["llama_parser"] = await _check_llama_parser()
-    
+
     # Check Langfuse
     services["langfuse"] = await _check_langfuse()
     
@@ -266,7 +260,7 @@ async def _check_gcp_storage() -> dict[str, Any]:
 
 
 async def _check_azure_openai() -> dict[str, Any]:
-    """Check Azure OpenAI connectivity."""
+    """Check Azure OpenAI configuration."""
     result = {
         "configured": False,
         "connected": False,
@@ -274,45 +268,17 @@ async def _check_azure_openai() -> dict[str, Any]:
         "embedding_deployment": settings.azure_openai_embedding_deployment_name,
         "error": None,
     }
-    
+
     try:
-        from medical_agent.infrastructure.azure_openai import AzureOpenAIClient
-        
-        client = AzureOpenAIClient()
-        result["configured"] = client.is_configured()
-        
+        result["configured"] = settings.is_azure_openai_configured()
+
         if result["configured"]:
-            # Only verify configuration, skip actual API call for health check
-            # to avoid unnecessary costs
+            # Configuration check only, skip actual API calls for health check
             result["connected"] = True
     except Exception as e:
         result["error"] = str(e)
         logger.warning(f"Azure OpenAI check failed: {e}")
-    
-    return result
 
-
-async def _check_llama_parser() -> dict[str, Any]:
-    """Check LlamaParser connectivity."""
-    result = {
-        "configured": False,
-        "connected": False,
-        "error": None,
-    }
-    
-    try:
-        from medical_agent.infrastructure.llama_parser import LlamaParserClient
-        
-        client = LlamaParserClient()
-        result["configured"] = client.is_configured()
-        
-        if result["configured"]:
-            # Configuration check only
-            result["connected"] = True
-    except Exception as e:
-        result["error"] = str(e)
-        logger.warning(f"LlamaParser check failed: {e}")
-    
     return result
 
 

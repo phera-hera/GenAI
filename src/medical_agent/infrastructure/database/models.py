@@ -247,93 +247,67 @@ class Paper(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         comment="Additional paper metadata",
     )
 
-    # Relationships
-    chunks: Mapped[list["PaperChunk"]] = relationship(
-        "PaperChunk",
-        back_populates="paper",
-        cascade="all, delete-orphan",
-    )
+    # Note: No direct relationship to chunks since paper_id is in metadata_ JSONB
+    # To query chunks for a paper: query(PaperChunk).filter(PaperChunk.metadata_['paper_id'].astext == str(paper.id))
 
 
-class PaperChunk(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+class PaperChunk(Base, TimestampMixin):
     """
     Chunked content from medical papers with vector embeddings.
-    
-    Each paper is split into semantic chunks (abstract, sections, tables)
-    and each chunk has an embedding for vector similarity search.
+
+    Pure LlamaIndex PGVectorStore schema (no custom columns):
+    - id: BIGSERIAL primary key (auto-incrementing, LlamaIndex managed)
+    - node_id: VARCHAR node identifier (UUID as string)
+    - text: TEXT node content
+    - metadata_: JSONB (contains paper_id, chunk_type, section_title, page_number,
+                        extracted medical metadata, etc.)
+    - embedding: VECTOR(3072) embeddings
+    - text_search_tsv: TSVECTOR (generated column for hybrid search)
+    - created_at, updated_at: timestamps
+
+    All custom data (paper_id, chunk_type, citations, medical metadata) is stored
+    in metadata_ JSONB following LlamaIndex pattern.
+
+    Table name: data_paper_chunks (LlamaIndex uses 'data_' prefix)
     """
 
-    __tablename__ = "paper_chunks"
+    __tablename__ = "data_paper_chunks"
 
-    # Foreign key to paper
-    paper_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("papers.id", ondelete="CASCADE"),
+    # Primary key (LlamaIndex manages this as auto-incrementing)
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    # Node identifier (LlamaIndex uses this for node.id_)
+    node_id: Mapped[str] = mapped_column(
+        String,
         nullable=False,
+        unique=True,
         index=True,
     )
 
-    # Chunk content
-    content: Mapped[str] = mapped_column(
+    # Chunk content (LlamaIndex standard)
+    text: Mapped[str] = mapped_column(
         Text,
         nullable=False,
     )
-    chunk_type: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-        default=ChunkType.OTHER.value,
-        index=True,
-    )
-    chunk_index: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        comment="Order of chunk within the paper",
+
+    # All metadata in JSONB (LlamaIndex standard)
+    # Contains: paper_id, chunk_type, chunk_index, section_title, page_number,
+    # extracted_metadata (medical terms), table_summary, etc.
+    metadata_: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=dict,
+        comment="All chunk metadata including medical terms, paper references, and structural data",
     )
 
     # Vector embedding for similarity search
     embedding: Mapped[Optional[list[float]]] = mapped_column(
         Vector(settings.embedding_dimension),
         nullable=True,
-    )
-
-    # Chunk metadata
-    section_title: Mapped[Optional[str]] = mapped_column(
-        String(500),
-        nullable=True,
-    )
-    page_number: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        nullable=True,
-    )
-    chunk_metadata: Mapped[Optional[dict]] = mapped_column(
-        JSONB,
-        nullable=True,
-        default=dict,
-        comment=(
-            "Chunk metadata including: "
-            "1) Structural metadata (section_type, table_id, page_number), "
-            "2) Extracted medical metadata (extracted_metadata with ethnicities, diagnoses, symptoms, "
-            "menstrual_status, birth_control, hormone_therapy, fertility_treatments, age_mentioned, "
-            "age_range, confidence), "
-            "3) Table summary (table_summary - one sentence for table chunks)"
-        ),
-    )
-
-    # Relationships
-    paper: Mapped["Paper"] = relationship(
-        "Paper",
-        back_populates="chunks",
-    )
-
-    # Indexes for vector similarity search
-    __table_args__ = (
-        # IVFFlat index for approximate nearest neighbor search
-        # Note: This is created via Alembic migration for better control
-        Index(
-            "ix_paper_chunks_paper_chunk_type",
-            "paper_id",
-            "chunk_type",
-        ),
     )
 
 

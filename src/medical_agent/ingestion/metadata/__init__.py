@@ -3,7 +3,7 @@
 from .extractor import MedicalMetadataExtractor
 from .llm_client import MetadataLLMClient, get_metadata_llm_client
 from .normalizer import TermNormalizer, get_term_normalizer
-from .types import ExtractedMetadata, TableMetadata
+from .types import ExtractedMetadata
 
 __all__ = [
     "MedicalMetadataExtractor",
@@ -12,5 +12,4 @@ __all__ = [
     "TermNormalizer",
     "get_term_normalizer",
     "ExtractedMetadata",
-    "TableMetadata",
 ]

@@ -6,11 +6,13 @@ medical reasoning agent.
 """
 
 import logging
+import time
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 
-from medical_agent.agent.graph import run_medical_agent
+from medical_agent.agent import query_medical_agent
 from medical_agent.api.schemas import (
     CitationResponse,
     ErrorResponse,
@@ -67,128 +69,91 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
 
     logger.info(f"Processing query: pH={request.ph_value}")
 
+    start_time = time.time()
+
     try:
-        # Build comprehensive health profile from all provided data
+        # Build health profile from request
         health_profile: dict[str, Any] = {}
 
-        # Add basic info
         if request.age is not None:
             health_profile["age"] = request.age
 
-        # Collect all symptoms from the symptoms object
-        all_symptoms = []
+        # Collect symptoms
+        symptoms = []
         if request.symptoms:
-            all_symptoms.extend(request.symptoms.discharge or [])
-            all_symptoms.extend(request.symptoms.vulva_vagina or [])
-            all_symptoms.extend(request.symptoms.smell or [])
-            all_symptoms.extend(request.symptoms.urine or [])
+            symptoms.extend(request.symptoms.discharge or [])
+            symptoms.extend(request.symptoms.vulva_vagina or [])
+            symptoms.extend(request.symptoms.smell or [])
+            symptoms.extend(request.symptoms.urine or [])
+        if symptoms:
+            health_profile["symptoms"] = symptoms
 
-        # Add medical history and context
-        medical_history = {}
-
+        # Add medical context
         if request.diagnoses:
-            medical_history["diagnoses"] = request.diagnoses
-
+            health_profile["diagnoses"] = request.diagnoses
         if request.ethnic_backgrounds:
-            medical_history["ethnic_backgrounds"] = request.ethnic_backgrounds
-
+            health_profile["ethnicity"] = request.ethnic_backgrounds
         if request.menstrual_cycle:
-            medical_history["menstrual_cycle"] = request.menstrual_cycle
+            health_profile["menstrual_status"] = request.menstrual_cycle
 
+        # Birth control
+        bc_list = []
         if request.birth_control:
-            medical_history["birth_control"] = request.birth_control.model_dump(
-                exclude_none=True, exclude_defaults=True
-            )
+            if request.birth_control.general:
+                bc_list.append(request.birth_control.general)
+            if request.birth_control.pill:
+                bc_list.append(request.birth_control.pill)
+            if request.birth_control.iud:
+                bc_list.append(request.birth_control.iud)
+            bc_list.extend(request.birth_control.other_methods or [])
+            bc_list.extend(request.birth_control.permanent or [])
+        if bc_list:
+            health_profile["birth_control"] = bc_list
 
-        if request.hormone_therapy:
-            medical_history["hormone_therapy"] = request.hormone_therapy
+        # Hormone therapy
+        hrt_list = []
+        hrt_list.extend(request.hormone_therapy or [])
+        hrt_list.extend(request.hrt or [])
+        if hrt_list:
+            health_profile["hormone_therapy"] = hrt_list
 
-        if request.hrt:
-            medical_history["hrt"] = request.hrt
+        logger.info(f"Health profile: age={health_profile.get('age')}, symptoms={len(symptoms)}")
 
-        if request.fertility_journey:
-            medical_history["fertility_journey"] = request.fertility_journey.model_dump(
-                exclude_none=True, exclude_defaults=True
-            )
-
-        if all_symptoms:
-            health_profile["symptoms"] = all_symptoms
-
-        if medical_history:
-            health_profile["medical_history"] = medical_history
-
-        # Determine pregnancy status from fertility journey
-        is_pregnant = False
-        if (
-            request.fertility_journey
-            and request.fertility_journey.current_status == "I am pregnant"
-        ):
-            is_pregnant = True
-
-        logger.info(
-            f"User health profile: age={health_profile.get('age')}, "
-            f"symptom_count={len(all_symptoms)}, "
-            f"pregnant={is_pregnant}"
-        )
-
-        # Run the medical agent
-        # NOTE: request.notes is intentionally NOT passed to the agent
-        result = await run_medical_agent(
+        # Run ReActAgent
+        analysis, raw_citations = await query_medical_agent(
             ph_value=request.ph_value,
             health_profile=health_profile if health_profile else None,
-            is_pregnant=is_pregnant,
         )
-
-        # Extract response components
-        final_response = result.get("final_response", {})
-        reasoning_output = result.get("reasoning_output", {})
 
         # Build citations
         citations = []
-        # Try to get citations from result first, then fall back to reasoning_output
-        raw_citations = result.get("citations", []) or reasoning_output.get("citations", [])
-        
-        logger.debug(
-            f"Citation extraction: result.citations={len(result.get('citations', []))}, "
-            f"reasoning_output.citations={len(reasoning_output.get('citations', []))}, "
-            f"raw_citations={len(raw_citations)}"
-        )
-        
         for c in raw_citations:
-            if isinstance(c, dict):
-                # Skip citations without paper_id (invalid)
-                paper_id = c.get("paper_id", "")
-                if not paper_id or paper_id == "":
-                    logger.warning(f"Skipping citation without paper_id: {c}")
-                    continue
-                    
+            if c.get("paper_id"):
                 citations.append(
                     CitationResponse(
-                        paper_id=paper_id,
+                        paper_id=c["paper_id"],
                         title=c.get("title"),
                         authors=c.get("authors"),
                         doi=c.get("doi"),
                         relevant_section=c.get("relevant_section"),
                     )
                 )
-        
-        logger.info(f"Built {len(citations)} citations for response")
+
+        logger.info(f"Analysis complete: {len(citations)} citations")
+
+        processing_time_ms = int((time.time() - start_time) * 1000)
 
         return QueryResponse(
-            session_id=result.get("session_id", ""),
-            ph_value=result.get("ph_value", request.ph_value),
-            risk_level=result.get("risk_level", "UNKNOWN"),
-            summary=final_response.get("summary", "Analysis complete."),
-            main_content=final_response.get("main_content", ""),
-            personalized_insights=final_response.get("personalized_insights", []),
-            next_steps=final_response.get("next_steps", []),
-            disclaimers=final_response.get(
-                "disclaimers",
-                "This information is for educational purposes only and is not medical advice. "
-                "Please consult a healthcare provider for any health concerns.",
-            ),
+            session_id=str(uuid.uuid4()),
+            ph_value=request.ph_value,
+            risk_level=analysis.risk_level,
+            summary=analysis.summary,
+            main_content=analysis.main_content,
+            personalized_insights=analysis.personalized_insights,
+            next_steps=analysis.next_steps,
+            disclaimers=analysis.disclaimers,
             citations=citations,
-            processing_time_ms=result.get("processing_time_ms", 0),
+            processing_time_ms=processing_time_ms,
         )
 
     except HTTPException:

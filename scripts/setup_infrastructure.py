@@ -105,94 +105,55 @@ def check_gcp_configuration() -> dict:
 def check_azure_openai_configuration() -> dict:
     """Check Azure OpenAI configuration and connectivity."""
     print_section("Azure OpenAI")
-    
+
     results = {
         "configured": False,
         "chat_connected": False,
         "embedding_connected": False,
     }
-    
+
     try:
         from medical_agent.core.config import settings
-        from medical_agent.infrastructure.azure_openai import AzureOpenAIClient
-        
-        client = AzureOpenAIClient()
-        
+        from medical_agent.infrastructure.azure_openai import (
+            get_llama_index_llm,
+            get_llama_index_embed_model,
+        )
+
         # Check configuration
-        if client.is_configured():
-            print_status("Configuration", True)
-            print(f"       Endpoint: {client.endpoint}")
-            print(f"       Chat deployment: {client.chat_deployment}")
-            print(f"       Embedding deployment: {client.embedding_deployment}")
-            results["configured"] = True
-        else:
+        if not settings.is_azure_openai_configured():
             print_status(
                 "Configuration", False,
                 "AZURE_OPENAI_API_KEY or AZURE_OPENAI_ENDPOINT not set"
             )
             return results
-        
-        # Test chat completion
+
+        print_status("Configuration", True)
+        print(f"       Endpoint: {settings.azure_openai_endpoint}")
+        print(f"       Chat deployment: {settings.azure_openai_deployment_name}")
+        print(f"       Embedding deployment: {settings.azure_openai_embedding_deployment_name}")
+        results["configured"] = True
+
+        # Test LLM
         try:
-            client.verify_connection()
-            print_status("Chat deployment", True)
+            llm = get_llama_index_llm()
+            print_status("LLM client", True)
             results["chat_connected"] = True
         except Exception as e:
-            print_status("Chat deployment", False, str(e))
-        
-        # Test embedding
+            print_status("LLM client", False, str(e))
+
+        # Test embedding model
         try:
-            client.verify_embedding_deployment()
-            print_status("Embedding deployment", True)
+            embed_model = get_llama_index_embed_model()
+            print_status("Embedding model", True)
             results["embedding_connected"] = True
         except Exception as e:
-            print_status("Embedding deployment", False, str(e))
-            
+            print_status("Embedding model", False, str(e))
+
     except ImportError as e:
         print_status("Dependencies", False, f"Missing: {e}")
     except Exception as e:
         print_status("Error", False, str(e))
-    
-    return results
 
-
-def check_llama_parser() -> dict:
-    """Check LlamaParser configuration."""
-    print_section("LlamaParser (LlamaCloud)")
-    
-    results = {"configured": False, "connected": False}
-    
-    try:
-        from medical_agent.core.config import settings
-        from medical_agent.infrastructure.llama_parser import LlamaParserClient
-        
-        client = LlamaParserClient()
-        
-        # Check configuration
-        if client.is_configured():
-            print_status("Configuration", True)
-            print(f"       API Key: {'*' * 8}...{client.api_key[-4:] if client.api_key else 'N/A'}")
-            results["configured"] = True
-        else:
-            print_status(
-                "Configuration", False,
-                "LLAMA_CLOUD_API_KEY not set"
-            )
-            return results
-        
-        # Verify connection
-        try:
-            client.verify_connection()
-            print_status("Connection", True)
-            results["connected"] = True
-        except Exception as e:
-            print_status("Connection", False, str(e))
-            
-    except ImportError as e:
-        print_status("Dependencies", False, f"Missing: {e}")
-    except Exception as e:
-        print_status("Error", False, str(e))
-    
     return results
 
 
@@ -477,12 +438,7 @@ def check_all() -> bool:
     azure_openai_results = check_azure_openai_configuration()
     if not azure_openai_results["chat_connected"]:
         all_passed = False
-    
-    # Check LlamaParser
-    llama_parser_results = check_llama_parser()
-    if not llama_parser_results["connected"]:
-        all_passed = False
-    
+
     # Check Langfuse
     langfuse_results = check_langfuse_configuration()
     if not langfuse_results["connected"]:
@@ -514,7 +470,7 @@ def main():
     )
     parser.add_argument(
         "--check",
-        choices=["gcp", "azure", "azure-openai", "llama-parser", "langfuse", "database"],
+        choices=["gcp", "azure", "azure-openai", "langfuse", "database"],
         help="Check specific service",
     )
     parser.add_argument(
@@ -535,8 +491,6 @@ def main():
             check_gcp_configuration()
         elif args.check in ("azure", "azure-openai"):
             check_azure_openai_configuration()
-        elif args.check == "llama-parser":
-            check_llama_parser()
         elif args.check == "langfuse":
             check_langfuse_configuration()
         elif args.check == "database":

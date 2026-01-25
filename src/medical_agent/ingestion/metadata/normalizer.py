@@ -1,9 +1,4 @@
-"""
-Term Normalizer - Utility Component
-
-Normalizes medical terms to standardized dropdown values.
-Used by MedicalMetadataExtractor (which is wrapped by LlamaIndex pipeline).
-"""
+"""Normalizes extracted medical terms to standardized dropdown values."""
 
 import logging
 import re

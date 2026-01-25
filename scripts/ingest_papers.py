@@ -91,6 +91,22 @@ class IngestionProgress:
         print("=" * 60)
 
 
+async def check_azure_connectivity():
+    """Test Azure OpenAI connectivity."""
+    logger.info("Testing Azure OpenAI connectivity...")
+    try:
+        from medical_agent.infrastructure.azure_openai import get_llama_index_embed_model
+        embed_model = get_llama_index_embed_model()
+        # Test with a simple embedding
+        test_text = "test"
+        embedding = await embed_model.aget_text_embedding(test_text)
+        logger.info(f"✓ Azure OpenAI connectivity OK (embedding dim: {len(embedding)})")
+        return True
+    except Exception as e:
+        logger.error(f"✗ Azure OpenAI connectivity failed: {e}")
+        return False
+
+
 async def ingest_papers(
     prefix: str = "papers/",
     limit: int | None = None,
@@ -120,12 +136,9 @@ async def ingest_papers(
             "Azure OpenAI is not configured. Set AZURE_OPENAI_API_KEY and related vars in .env"
         )
 
-    if not settings.is_llama_parser_configured():
-        raise ValueError(
-            "LlamaParser LVM mode is not configured. "
-            "Set AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, "
-            "AZURE_OPENAI_API_VERSION, and AZURE_OPENAI_DEPLOYMENT_NAME in .env"
-        )
+    # Check Azure connectivity
+    if not dry_run and not await check_azure_connectivity():
+        raise ValueError("Azure OpenAI is not reachable. Check API key and endpoint.")
 
     # Initialize database
     logger.info("Initializing database...")
@@ -155,9 +168,8 @@ async def ingest_papers(
     if dry_run:
         print("\nDRY RUN - Papers to be processed:")
         print("-" * 60)
-        for i, pdf in enumerate(pdf_files, 1):
-            size_kb = pdf["size"] / 1024 if pdf["size"] else 0
-            print(f"{i}. {pdf['name']} ({size_kb:.1f} KB)")
+        for i, pdf_name in enumerate(pdf_files, 1):
+            print(f"{i}. {pdf_name}")
         print("-" * 60)
         print(f"Total: {len(pdf_files)} papers")
         return IngestionProgress(len(pdf_files))
@@ -167,32 +179,35 @@ async def ingest_papers(
         config=PipelineConfig(
             max_chunk_tokens=512,
             extract_metadata=True,
-            extract_table_summaries=True,
         )
     )
 
     progress = IngestionProgress(len(pdf_files))
 
     # Process each paper
-    for pdf_info in pdf_files:
-        gcp_path = pdf_info["name"]
+    for gcp_path in pdf_files:
         progress.print_progress(gcp_path)
 
         try:
             # Download PDF
-            logger.info(f"Downloading: {gcp_path}")
+            logger.info(f"[{progress.completed + 1}/{progress.total}] Downloading: {gcp_path}")
             pdf_content = storage.download_pdf(gcp_path)
+            logger.info(f"Downloaded {len(pdf_content)} bytes")
 
             # Process through pipeline
+            logger.info(f"[{progress.completed + 1}/{progress.total}] Starting pipeline for: {gcp_path}")
             async with get_session_context() as session:
                 result = await pipeline.process_paper(
                     session=session,
                     pdf_content=pdf_content,
                     gcp_path=f"gs://{settings.gcp_bucket_name}/{gcp_path}",
+                    skip_duplicate_check=not skip_existing,
                 )
 
                 # Commit the transaction
+                logger.info(f"Committing database transaction for paper {result.paper_id}")
                 await session.commit()
+                logger.info(f"Transaction committed successfully")
 
             progress.update(result)
 
@@ -226,8 +241,8 @@ def main():
     )
     parser.add_argument(
         "--prefix",
-        default="papers/",
-        help="GCP path prefix to filter papers (default: papers/)",
+        default="",
+        help="GCP path prefix to filter papers (default: root)",
     )
     parser.add_argument(
         "--limit",

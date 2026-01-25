@@ -16,11 +16,13 @@ preserving document structure.
 import hashlib
 import io
 import logging
+import tempfile
 import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
 from docling.chunking import HybridChunker
 from llama_index.core.ingestion import IngestionPipeline
@@ -28,15 +30,15 @@ from llama_index.core.schema import Document
 from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
 from llama_index.node_parser.docling import DoclingNodeParser
 from llama_index.readers.docling import DoclingReader
+from llama_index.vector_stores.postgres import PGVectorStore
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from medical_agent.core.config import settings
 from medical_agent.core.exceptions import DatabaseException
-from medical_agent.infrastructure.database.models import Paper
+from medical_agent.infrastructure.database.models import Paper, PaperChunk
 from medical_agent.infrastructure.database.session import get_session_context
 from medical_agent.ingestion.metadata.extractor import MedicalMetadataExtractor
-from medical_agent.ingestion.storage.vector_store import MedicalPGVectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +54,6 @@ class PipelineConfig:
 
     # Metadata extraction settings
     extract_metadata: bool = True
-    extract_table_summaries: bool = True
 
     # Storage settings
     delete_existing_chunks: bool = True  # Delete old chunks before re-ingestion
@@ -84,6 +85,7 @@ class PipelineResult:
     # Statistics
     chunk_count: int = 0
     node_count: int = 0
+    embedded_count: int = 0  # For backward compatibility with script
     stored_count: int = 0
     failed_count: int = 0
 
@@ -125,20 +127,32 @@ class MedicalIngestionPipeline:
     2. Chunk with DoclingNodeParser (section-aware)
     3. Extract medical metadata (8 fields)
     4. Generate embeddings (Azure OpenAI)
-    5. Store in pgvector
+    5. Store in pgvector (native PGVectorStore with hybrid_search=True)
 
     Args:
         config: Pipeline configuration
-        vector_store: Optional MedicalPGVectorStore instance
     """
 
     def __init__(
         self,
         config: PipelineConfig | None = None,
-        vector_store: MedicalPGVectorStore | None = None,
     ):
         self.config = config or PipelineConfig()
-        self.vector_store = vector_store or MedicalPGVectorStore()
+
+        # Initialize native PGVectorStore with hybrid search support
+        # Table name: LlamaIndex prefixes with "data_", so "paper_chunks" → "data_paper_chunks"
+        self.vector_store = PGVectorStore.from_params(
+            database=settings.postgres_db,
+            host=settings.postgres_host,
+            password=settings.postgres_password,
+            port=settings.postgres_port,
+            user=settings.postgres_user,
+            table_name="paper_chunks",  # Will use data_paper_chunks (LlamaIndex adds "data_" prefix)
+            embed_dim=settings.embedding_dimension,
+            hybrid_search=True,  # Enable built-in BM25 + vector fusion
+            text_search_config="english",  # Full-text search language
+            perform_setup=False,  # Use existing table schema (don't create new table)
+        )
 
         # Initialize Docling reader with optimal settings
         self.reader = DoclingReader(
@@ -172,13 +186,11 @@ class MedicalIngestionPipeline:
         )
 
         # Initialize metadata extractor
-        self.metadata_extractor = MedicalMetadataExtractor(
-            extract_table_summaries=self.config.extract_table_summaries,
-        )
+        self.metadata_extractor = MedicalMetadataExtractor()
 
         # Initialize HybridChunker for token-aware section chunking
+        # Use default tokenizer (HybridChunker has its own tokenizer handling)
         hybrid_chunker = HybridChunker(
-            tokenizer="cl100k_base",  # Match text-embedding-3-large tokenizer
             max_tokens=self.config.max_chunk_tokens,  # Prevent embedding truncation
             min_tokens=self.config.min_chunk_tokens,  # Avoid tiny chunks
             merge_peers=self.config.merge_small_chunks,  # Merge small adjacent chunks
@@ -273,10 +285,19 @@ class MedicalIngestionPipeline:
 
             parse_start = time.monotonic()
             try:
-                # DoclingReader expects a file-like object
-                pdf_file = io.BytesIO(pdf_content)
-                documents = self.reader.load_data(file=pdf_file)
-                result.parsed = True
+                # DoclingReader expects a file path, so write to temp file
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
+                    tmp_file.write(pdf_content)
+                    tmp_path = tmp_file.name
+
+                try:
+                    logger.info(f"Starting PDF parse for {gcp_path} ({len(pdf_content)} bytes)")
+                    documents = list(self.reader.lazy_load_data(file_path=tmp_path))
+                    logger.info(f"PDF parse completed: extracted {len(documents)} documents")
+                    result.parsed = True
+                finally:
+                    # Clean up temp file
+                    Path(tmp_path).unlink(missing_ok=True)
 
                 if not documents:
                     result.errors.append("No documents extracted from PDF")
@@ -308,11 +329,14 @@ class MedicalIngestionPipeline:
             pipeline_start = time.monotonic()
             try:
                 # Run the complete pipeline
+                logger.info(f"Starting pipeline (chunk + embed) for paper {result.paper_id}")
                 nodes = await self.pipeline.arun(documents=[document])
+                logger.info(f"Pipeline completed: generated {len(nodes)} nodes")
                 result.chunked = True
                 result.embedded = True
                 result.node_count = len(nodes)
                 result.chunk_count = len(nodes)
+                result.embedded_count = len(nodes)
 
                 logger.info(f"Pipeline generated {len(nodes)} nodes for paper {result.paper_id}")
 
@@ -337,6 +361,7 @@ class MedicalIngestionPipeline:
             store_start = time.monotonic()
             try:
                 # Create or update paper record
+                logger.info(f"Upserting paper record for {result.paper_id}")
                 paper = await self._upsert_paper(
                     session=session,
                     paper_id=result.paper_id,
@@ -346,16 +371,24 @@ class MedicalIngestionPipeline:
                 )
                 result.paper_id = paper.id
                 result.paper_title = paper.title
+                logger.info(f"Paper record created: {paper.title}")
 
                 # Delete existing chunks if re-processing
                 if self.config.delete_existing_chunks:
-                    await self.vector_store.delete_paper_chunks(paper.id)
+                    logger.info(f"Deleting existing chunks for paper {paper.id}")
+                    deleted_count = await self._delete_paper_chunks(session, paper.id)
+                    logger.info(f"Deleted {deleted_count} existing chunks")
 
-                # Store nodes
-                node_ids = await self.vector_store.add_nodes(
-                    nodes=nodes,
-                    paper_id=paper.id,
-                )
+                # Add paper_id to all nodes' metadata
+                for node in nodes:
+                    if node.metadata is None:
+                        node.metadata = {}
+                    node.metadata["paper_id"] = str(paper.id)
+
+                # Store nodes using native PGVectorStore
+                logger.info(f"Starting to store {len(nodes)} nodes to vector store")
+                node_ids = self.vector_store.add(nodes)
+                logger.info(f"Successfully stored {len(node_ids)} nodes")
                 result.stored = True
                 result.stored_count = len(node_ids)
 
@@ -380,6 +413,36 @@ class MedicalIngestionPipeline:
         logger.info(result.summary())
         return result
 
+    async def _delete_paper_chunks(
+        self,
+        session: AsyncSession,
+        paper_id: uuid.UUID,
+    ) -> int:
+        """
+        Delete all chunks for a paper by querying metadata_ JSONB.
+
+        Args:
+            session: Database session
+            paper_id: UUID of the paper
+
+        Returns:
+            Number of deleted chunks
+        """
+        from sqlalchemy import delete
+
+        try:
+            # Query by metadata_->>'paper_id' since paper_id is now in JSONB
+            stmt = delete(PaperChunk).where(
+                PaperChunk.metadata_['paper_id'].astext == str(paper_id)
+            )
+            result = await session.execute(stmt)
+            deleted_count = result.rowcount
+            await session.commit()
+            return deleted_count
+        except Exception as e:
+            logger.error(f"Failed to delete chunks: {e}", exc_info=True)
+            raise DatabaseException(f"Failed to delete chunks: {e}")
+
     async def _upsert_paper(
         self,
         session: AsyncSession,
@@ -389,10 +452,16 @@ class MedicalIngestionPipeline:
         file_hash: str,
     ) -> Paper:
         """Create or update a paper record."""
-        # Check if paper exists
+        # Check if paper exists by ID first
         stmt = select(Paper).where(Paper.id == paper_id)
         result = await session.execute(stmt)
         paper = result.scalar_one_or_none()
+
+        # If not found by ID, check by file_hash (for re-processing with new ID)
+        if not paper:
+            stmt = select(Paper).where(Paper.file_hash == file_hash)
+            result = await session.execute(stmt)
+            paper = result.scalar_one_or_none()
 
         # Extract metadata from document
         metadata = document.metadata or {}
