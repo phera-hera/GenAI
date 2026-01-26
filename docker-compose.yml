@@ -1,49 +1,18 @@
 version: "3.9"
 
-services:
-  # PostgreSQL with pgvector extension
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: femtech_postgres
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-femtech}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-femtech_dev_password}
-      POSTGRES_DB: ${POSTGRES_DB:-femtech_medical}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-femtech} -d ${POSTGRES_DB:-femtech_medical}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
+# Minimal docker-compose for testing Docker build locally
+# Database: Uses GCP Cloud SQL (via Cloud SQL Proxy or direct connection)
 
-  # FastAPI Application
+services:
   app:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: femtech_app
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-femtech}:${POSTGRES_PASSWORD:-femtech_dev_password}@postgres:5432/${POSTGRES_DB:-femtech_medical}
-      - ENVIRONMENT=development
     env_file:
       - .env
     ports:
       - "${APP_PORT:-8000}:8000"
-    volumes:
-      - .:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: unless-stopped
-    command: uvicorn medical_agent.api.main:app --host 0.0.0.0 --port 8000 --reload
-
-volumes:
-  postgres_data:
-    driver: local
 
 
