@@ -146,11 +146,7 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
         return QueryResponse(
             session_id=str(uuid.uuid4()),
             ph_value=request.ph_value,
-            risk_level=analysis.risk_level,
-            summary=analysis.summary,
-            main_content=analysis.main_content,
-            personalized_insights=analysis.personalized_insights,
-            next_steps=analysis.next_steps,
+            agent_reply=analysis.agent_reply,
             disclaimers=analysis.disclaimers,
             citations=citations,
             processing_time_ms=processing_time_ms,

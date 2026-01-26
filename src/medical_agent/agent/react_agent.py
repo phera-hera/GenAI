@@ -30,22 +30,9 @@ logger = logging.getLogger(__name__)
 class MedicalAnalysisResponse(BaseModel):
     """Structured output from medical agent."""
 
-    risk_level: str = Field(
+    agent_reply: str = Field(
         ...,
-        description="Risk assessment: NORMAL, MONITOR, CONCERNING, or URGENT",
-    )
-    summary: str = Field(..., description="Brief 1-2 sentence summary")
-    main_content: str = Field(
-        ...,
-        description="Detailed analysis (2-3 paragraphs) based on research",
-    )
-    personalized_insights: list[str] = Field(
-        default_factory=list,
-        description="3-5 bullet points specific to user's profile",
-    )
-    next_steps: list[str] = Field(
-        default_factory=list,
-        description="3-5 actionable recommendations",
+        description="Complete analysis including summary, detailed content, and personalized insights based on research",
     )
     disclaimers: str = Field(
         ...,
@@ -63,11 +50,11 @@ SYSTEM_PROMPT = """You are a medical research assistant specializing in vaginal 
 Analyze pH readings in context of the user's health profile and provide evidence-based insights from medical research.
 
 ## Guidelines
-1. **Risk Assessment**: Classify pH readings as:
-   - NORMAL: pH 3.8-4.5 (healthy acidic range)
-   - MONITOR: pH 4.5-5.0 (slightly elevated, watch for symptoms)
-   - CONCERNING: pH 5.0-6.0 (may indicate bacterial imbalance)
-   - URGENT: pH >6.0 or <3.8 (needs medical attention)
+1. **pH Analysis**: Provide comprehensive analysis of pH readings:
+   - pH 3.8-4.5: healthy acidic range
+   - pH 4.5-5.0: slightly elevated, watch for symptoms
+   - pH 5.0-6.0: may indicate bacterial imbalance
+   - pH >6.0 or <3.8: needs medical attention
 
 2. **Research-Based**: Use the medical_research tool to find relevant studies. Cite specific findings.
 
@@ -80,14 +67,18 @@ Analyze pH readings in context of the user's health profile and provide evidence
 
 4. **Be Specific**: Reference actual study findings, not generic advice.
 
-5. **Next Steps**: Provide actionable recommendations based on findings.
+5. **Comprehensive Response**: Provide a complete analysis that includes:
+   - Brief summary of the pH reading
+   - Detailed explanation based on research
+   - Personalized insights for the user's specific health profile
+   - Any relevant considerations or recommendations
 
 ## CRITICAL: Medical Disclaimers
 ALWAYS include this exact disclaimer in your response:
 "This analysis is for informational purposes only and does NOT constitute medical advice, diagnosis, or treatment. Always consult a qualified healthcare provider for medical concerns. If you experience severe symptoms, seek immediate medical attention."
 
 ## Output Format
-Respond with structured data including risk_level, summary, main_content, personalized_insights, next_steps, and disclaimers.
+Respond with structured data including agent_reply (complete analysis) and disclaimers.
 """
 
 
@@ -328,11 +319,7 @@ Agent Analysis:
 {str(agent_response)}
 
 Instructions:
-- Extract risk_level (must be exactly: NORMAL, MONITOR, CONCERNING, or URGENT)
-- Create brief summary (1-2 sentences)
-- Extract main_content (detailed analysis, 2-3 paragraphs)
-- List personalized_insights as bullet points (3-5 items)
-- List next_steps as actionable recommendations (3-5 items)
+- Combine all the analysis content into agent_reply field (include summary, detailed analysis, and any personalized insights)
 - ALWAYS include the medical disclaimer exactly as specified in the schema
 
 Return the structured response."""

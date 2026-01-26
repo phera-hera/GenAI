@@ -93,16 +93,7 @@ Always consult with a qualified healthcare provider for medical concerns.
 - **Health Profile Management**: Store and update user health information
 - **pH-Based Analysis**: Analyze vaginal pH readings with health context
 - **Evidence-Based Insights**: Retrieve information from curated medical research
-- **Risk Assessment**: Categorize readings into actionable risk levels
-
-### Risk Levels
-
-| Level | Description |
-|-------|-------------|
-| NORMAL | pH within healthy range, no concerning symptoms |
-| MONITOR | Minor deviation or mild symptoms - monitor and track |
-| CONCERNING | Notable deviation - consider consulting healthcare provider |
-| URGENT | Significant concern - prompt medical consultation recommended |
+- **Personalized Recommendations**: Get tailored insights based on your health profile
         """,
         version=settings.app_version,
         docs_url="/docs" if settings.is_development else None,

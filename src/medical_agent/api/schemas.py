@@ -144,20 +144,8 @@ class QueryResponse(BaseModel):
 
     session_id: str = Field(..., description="Unique session identifier")
     ph_value: float = Field(..., description="The analyzed pH value")
-    risk_level: str = Field(
-        ..., description="Risk assessment level (NORMAL, MONITOR, CONCERNING, URGENT)"
-    )
-
-    summary: str = Field(..., description="Brief summary of the analysis")
-    main_content: str = Field(..., description="Detailed analysis content")
-    personalized_insights: list[str] = Field(
-        default_factory=list, description="Insights based on user profile"
-    )
-    next_steps: list[str] = Field(
-        default_factory=list, description="Recommended next steps"
-    )
+    agent_reply: str = Field(..., description="Complete medical analysis response")
     disclaimers: str = Field(..., description="Medical disclaimers")
-
     citations: list[CitationResponse] = Field(
         default_factory=list, description="Research paper citations"
     )
@@ -169,11 +157,7 @@ class QueryResponse(BaseModel):
                 {
                     "session_id": "abc123",
                     "ph_value": 4.8,
-                    "risk_level": "MONITOR",
-                    "summary": "Your pH is slightly elevated at 4.8",
-                    "main_content": "A vaginal pH of 4.8 is slightly above...",
-                    "personalized_insights": ["Based on your symptoms..."],
-                    "next_steps": ["Continue monitoring", "Track symptoms"],
+                    "agent_reply": "Your pH reading of 4.8 is slightly elevated. A vaginal pH of 4.8 is slightly above the normal range...",
                     "disclaimers": "This is not medical advice...",
                     "citations": [],
                     "processing_time_ms": 1500,
@@ -191,140 +175,3 @@ class ErrorResponse(BaseModel):
     details: dict[str, Any] | None = Field(None, description="Additional error details")
 
 
-class PaperInfo(BaseModel):
-    """Information about an ingested paper."""
-
-    id: str
-    title: str
-    authors: str | None
-    doi: str | None
-    chunk_count: int
-    is_processed: bool
-
-
-class PapersListResponse(BaseModel):
-    """Response for listing papers."""
-
-    papers: list[PaperInfo]
-    total: int
-
-
-# Ingestion Schemas
-
-
-class IngestionRequest(BaseModel):
-    """Request schema for ingesting papers."""
-
-    gcp_paths: list[str] = Field(
-        default_factory=list,
-        description="List of GCP Cloud Storage paths (e.g., ['gs://bucket/paper1.pdf', 'paper2.pdf'])",
-    )
-    list_bucket: bool = Field(
-        default=False,
-        description="If True, list all PDFs in bucket and ingest all. Ignores gcp_paths.",
-    )
-    dry_run: bool = Field(
-        default=False,
-        description="If True, validate PDFs without storing embeddings.",
-    )
-
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {
-                    "gcp_paths": ["gs://femtech-medical-papers/paper1.pdf"],
-                    "list_bucket": False,
-                    "dry_run": False,
-                },
-                {
-                    "gcp_paths": [],
-                    "list_bucket": True,
-                    "dry_run": False,
-                },
-            ]
-        }
-    }
-
-
-class IngestionStageResult(BaseModel):
-    """Result of a single ingestion stage."""
-
-    stage: str = Field(..., description="Stage name (parse, chunk, embed, store, etc.)")
-    success: bool = Field(..., description="Whether stage succeeded")
-    duration_ms: int = Field(..., description="Duration in milliseconds")
-    error: str | None = Field(None, description="Error message if failed")
-
-
-class IngestionResultDetail(BaseModel):
-    """Detailed result for a single paper ingestion."""
-
-    paper_path: str = Field(..., description="GCP path of ingested paper")
-    paper_id: str | None = Field(None, description="ID of ingested paper")
-    success: bool = Field(..., description="Whether ingestion succeeded")
-    total_duration_ms: int = Field(..., description="Total ingestion time")
-    chunk_count: int = Field(0, description="Number of chunks created")
-    metadata_found: dict[str, int] = Field(
-        default_factory=dict,
-        description="Count of metadata items found (e.g., {'diagnoses': 2, 'symptoms': 3})",
-    )
-    stages: list[IngestionStageResult] = Field(
-        default_factory=list, description="Results of each pipeline stage"
-    )
-    error: str | None = Field(None, description="Error message if failed")
-
-
-class IngestionResponse(BaseModel):
-    """Response schema for ingestion request."""
-
-    request_id: str = Field(..., description="Unique request identifier")
-    status: str = Field(
-        ...,
-        description="Overall status (COMPLETED, PARTIAL_SUCCESS, FAILED)",
-    )
-    total_papers_processed: int = Field(..., description="Total papers processed")
-    successful: int = Field(..., description="Successful ingestions")
-    failed: int = Field(..., description="Failed ingestions")
-    total_chunks_created: int = Field(..., description="Total chunks across all papers")
-    total_duration_ms: int = Field(..., description="Total processing time")
-    details: list[IngestionResultDetail] = Field(
-        default_factory=list, description="Per-paper ingestion details"
-    )
-
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {
-                    "request_id": "ingest-20240101-123456",
-                    "status": "COMPLETED",
-                    "total_papers_processed": 2,
-                    "successful": 2,
-                    "failed": 0,
-                    "total_chunks_created": 245,
-                    "total_duration_ms": 45000,
-                    "details": [
-                        {
-                            "paper_path": "gs://bucket/paper1.pdf",
-                            "paper_id": "paper-001",
-                            "success": True,
-                            "total_duration_ms": 22000,
-                            "chunk_count": 120,
-                            "metadata_found": {
-                                "diagnoses": 2,
-                                "symptoms": 3,
-                                "ethnicities": 1,
-                            },
-                            "stages": [
-                                {
-                                    "stage": "parse",
-                                    "success": True,
-                                    "duration_ms": 5000,
-                                    "error": None,
-                                },
-                            ],
-                            "error": None,
-                        }
-                    ],
-                }
-            ]
-        }
-    }

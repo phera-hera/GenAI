@@ -38,15 +38,6 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
-class RiskLevel(str, Enum):
-    """Risk assessment levels based on pH and symptoms."""
-
-    NORMAL = "normal"
-    MONITOR = "monitor"
-    CONCERNING = "concerning"
-    URGENT = "urgent"
-
-
 class ChunkType(str, Enum):
     """Types of chunks extracted from medical papers."""
 
@@ -354,12 +345,6 @@ class QueryLog(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     # Processing information
-    risk_level: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default=RiskLevel.NORMAL.value,
-        index=True,
-    )
     retrieved_chunk_ids: Mapped[Optional[list]] = mapped_column(
         JSONB,
         nullable=True,
@@ -404,11 +389,6 @@ class QueryLog(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         Index(
             "ix_query_logs_user_created",
             "user_id",
-            "created_at",
-        ),
-        Index(
-            "ix_query_logs_risk_level_created",
-            "risk_level",
             "created_at",
         ),
     )
