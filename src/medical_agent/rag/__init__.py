@@ -1,27 +1,27 @@
 """
-Medical RAG using LlamaIndex CitationQueryEngine.
+Medical RAG using LlamaIndex retriever.retrieve().
 
-Provides direct retrieval with inline citations from medical research papers.
+Provides structured node retrieval from medical research papers.
+Returns NodeWithScore objects for use in LangGraph workflows.
 
 Usage:
-    from medical_agent.rag import query_medical_rag
+    from medical_agent.rag import retrieve_nodes
 
-    response, citations = await query_medical_rag(
-        ph_value=4.8,
-        health_profile={"age": 28, "symptoms": ["mild discharge"]},
-    )
-    print(response.agent_reply)
+    # Retrieve nodes for a query
+    nodes = retrieve_nodes("pH 5.2 with discharge")
+
+    for node in nodes:
+        print(node.node.text)
+        print(node.node.metadata["paper_id"])
 """
 
 from medical_agent.rag.llamaindex_retrieval import (
-    MedicalAnalysisResponse,
-    build_citation_query_engine,
-    query_medical_rag,
+    build_retriever,
+    retrieve_nodes,
 )
 
 __all__ = [
-    "build_citation_query_engine",
-    "query_medical_rag",
-    "MedicalAnalysisResponse",
+    "build_retriever",
+    "retrieve_nodes",
 ]
 
