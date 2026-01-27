@@ -2,11 +2,11 @@
 
 ## Overview
 
-Medical RAG Agent for vaginal pH analysis using **LlamaIndex ReActAgent** with hybrid search retrieval. The system provides evidence-based health insights from curated medical research papers.
+Medical RAG system for vaginal pH analysis using **LlamaIndex CitationQueryEngine** with hybrid search retrieval. The system provides evidence-based health insights from curated medical research papers.
 
 **Key Design Principles:**
 - Use native LlamaIndex components (no custom wrappers)
-- Single ReActAgent replaces multi-node workflow
+- Direct CitationQueryEngine for retrieval with inline citations
 - Hybrid search (BM25 + semantic) for better retrieval
 - Structured outputs with Pydantic validation
 
@@ -26,32 +26,25 @@ Medical RAG Agent for vaginal pH analysis using **LlamaIndex ReActAgent** with h
 │  src/medical_agent/api/routes/query.py                          │
 │  - Validates request                                            │
 │  - Builds health profile context                               │
-│  - Calls ReActAgent                                             │
+│  - Calls RAG retrieval                                          │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    REACTAGENT (LlamaIndex)                      │
-│  src/medical_agent/agent/react_agent.py                         │
+│                  RAG RETRIEVAL (LlamaIndex)                     │
+│  src/medical_agent/rag/llamaindex_retrieval.py                  │
 │                                                                 │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │  System Prompt (medical guidelines + health profile)    │  │
+│  │  Query Builder                                          │  │
+│  │  - pH value + health profile context                   │  │
+│  │  - Formatted medical query prompt                       │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                               │                                 │
 │                               ▼                                 │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │  LLM Reasoning Loop (GPT-4o)                            │  │
-│  │  - Analyzes pH value                                    │  │
-│  │  - Decides if research needed                           │  │
-│  │  - Formulates search queries                            │  │
-│  │  - Calls tools iteratively                              │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                               │                                 │
-│                               ▼                                 │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  Tool: medical_research (CitationQueryEngine)           │  │
+│  │  CitationQueryEngine (GPT-4o)                           │  │
 │  │  - Hybrid search (BM25 + vector similarity)             │  │
-│  │  - Returns cited sources [1], [2], ...                  │  │
+│  │  - Returns response with inline citations [1], [2]      │  │
 │  │  - Captures citations in CitationRegistry               │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                               │                                 │
@@ -97,24 +90,21 @@ PDF → Docling Reader (JSON export)
 ---
 
 ### 2. Query Pipeline
-**File:** `src/medical_agent/agent/react_agent.py`
+**File:** `src/medical_agent/rag/llamaindex_retrieval.py`
 
 ```
-User Query → ReActAgent
-           → System Prompt (medical guidelines + health profile)
-           → LLM Reasoning (decides actions)
-           → Tool Call: medical_research(query_str)
+User Query → Build query prompt (pH + health profile)
            → CitationQueryEngine
            → Hybrid Search (top_k=5)
-           → Returns cited text [1], [2]
-           → Agent synthesizes response
+           → LLM generates response with citations [1], [2]
+           → Capture source nodes in CitationRegistry
            → Structured output (Pydantic)
            → Return with citations
 ```
 
 **Key Features:**
-- **Single LLM call** for reasoning + tool selection (vs 5 calls in old design)
-- **Iterative**: Agent can call tools multiple times if needed
+- **Direct retrieval** with CitationQueryEngine (no multi-step reasoning)
+- **Inline citations** in response text
 - **Citations**: Captured automatically via CitationRegistry
 - **Structured output**: Guaranteed schema via Pydantic
 
@@ -122,22 +112,13 @@ User Query → ReActAgent
 
 ## Key Components
 
-### ReActAgent Configuration
+### CitationQueryEngine Configuration
 ```python
-ReActAgent(
-    tools=[medical_research_tool],  # Query engine wrapped as tool
+CitationQueryEngine.from_args(
+    index=VectorStoreIndex.from_vector_store(vector_store),
     llm=AzureOpenAI(model="gpt-4o"),
-    system_prompt=SYSTEM_PROMPT,    # Medical guidelines
-    verbose=True
-)
-```
-
-### Medical Research Tool
-```python
-FunctionTool.from_defaults(
-    fn=citation_tool_wrapper,  # Wraps CitationQueryEngine
-    name="medical_research",
-    description="Search 250+ medical papers about vaginal pH..."
+    similarity_top_k=5,
+    citation_chunk_size=512
 )
 ```
 
@@ -206,19 +187,6 @@ CREATE INDEX ON data_paper_chunks USING GIN (to_tsvector('english', text));
 
 ---
 
-## Benefits Over Old Architecture
-
-| Aspect | Old (LangGraph) | New (ReActAgent) | Improvement |
-|--------|----------------|------------------|-------------|
-| **Code Lines** | ~3,100 lines | ~350 lines | **90% reduction** |
-| **LLM Calls** | 5 sequential calls | 1-2 calls | **60-80% cost savings** |
-| **Latency** | 15-30 seconds | 3-8 seconds | **70% faster** |
-| **Complexity** | 5 nodes + state management | Single agent + tools | **Much simpler** |
-| **Flexibility** | Fixed pipeline | Iterative reasoning | **True agentic behavior** |
-| **Maintenance** | Custom wrappers | Native components | **Easier to update** |
-
----
-
 ## Configuration
 
 ### Required Environment Variables
@@ -240,11 +208,11 @@ GCP_BUCKET_NAME=xxx
 
 ## Usage Examples
 
-### Query the Agent
+### Query the RAG System
 ```python
-from medical_agent.agent import query_medical_agent
+from medical_agent.rag import query_medical_rag
 
-response, citations = await query_medical_agent(
+response, citations = await query_medical_rag(
     ph_value=5.2,
     health_profile={
         "age": 32,
@@ -289,9 +257,9 @@ print(f"Stored {result.stored_count} chunks")
 ## Future Enhancements
 
 When needed (based on production requirements):
-- **LangGraph integration**: Wrap ReActAgent as a tool for multi-agent workflows
+- **LangGraph integration**: Wrap RAG retrieval in LangGraph for corrective RAG flow (grade → rewrite → reflect)
+- **Conversation memory**: Track multi-turn conversations with MemorySaver
 - **Human-in-the-loop**: Add approval steps for high-risk assessments
-- **Conversation memory**: Track multi-turn conversations
 - **Custom retrievers**: Implement domain-specific retrieval strategies
 - **Evaluation metrics**: Track RAG quality with LlamaIndex evaluators
 

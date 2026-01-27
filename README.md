@@ -33,7 +33,7 @@ This platform takes pH values from test strip photos (provided by a separate CV 
 | Embeddings | Azure OpenAI (text-embedding-3-large) |
 | Document Parsing | Docling (LlamaIndex) |
 | Vector DB | pgvector (PostgreSQL) with hybrid search |
-| Agent Framework | LlamaIndex ReActAgent |
+| RAG System | LlamaIndex CitationQueryEngine |
 | RAG Framework | LlamaIndex |
 | Observability | Langfuse |
 | Deployment | GCP Cloud Run |
@@ -129,9 +129,9 @@ Medical_Agent/
 │       │   │                            # (Docling + HybridChunker + Metadata + Embeddings)
 │       │   └── metadata/                # Medical metadata extraction
 │       │
-│       ├── agent/                       # Medical reasoning agent
-│       │   └── react_agent.py          # LlamaIndex ReActAgent
-│       │                                # (Replaces LangGraph multi-node workflow)
+│       ├── rag/                         # Medical RAG retrieval
+│       │   └── llamaindex_retrieval.py # LlamaIndex CitationQueryEngine
+│       │                                # (Direct retrieval with citations)
 │       │
 │       └── api/                         # Web layer (FastAPI)
 │           ├── main.py                  # Application entry point
@@ -156,12 +156,12 @@ Medical_Agent/
 The project follows clean architecture with clear separation of concerns:
 
 ```
-api (FastAPI) → agent (ReActAgent) → ingestion (LlamaIndex pipeline) → infrastructure → core
+api (FastAPI) → rag (CitationQueryEngine) → ingestion (LlamaIndex pipeline) → infrastructure → core
 ```
 
 **Layer responsibilities:**
 - **api**: HTTP endpoints and request/response handling
-- **agent**: Medical reasoning with LlamaIndex ReActAgent
+- **rag**: Medical research retrieval with LlamaIndex CitationQueryEngine
 - **ingestion**: Document processing (Docling parsing, chunking, embeddings, metadata extraction)
 - **infrastructure**: External services (Azure OpenAI, GCP Storage, PostgreSQL, Langfuse)
 - **core**: Configuration and domain exceptions
@@ -199,8 +199,8 @@ from medical_agent.infrastructure.database.models import Paper, PaperChunk
 from medical_agent.ingestion.pipeline import MedicalIngestionPipeline, PipelineConfig
 from medical_agent.ingestion.metadata import MedicalMetadataExtractor, ExtractedMetadata
 
-# Agent (LlamaIndex ReActAgent)
-from medical_agent.agent.react_agent import MedicalAnalysisResponse
+# RAG (LlamaIndex CitationQueryEngine)
+from medical_agent.rag import query_medical_rag, MedicalAnalysisResponse
 
 # API application
 from medical_agent.api.main import app

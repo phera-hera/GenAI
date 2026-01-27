@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 
-from medical_agent.agent import query_medical_agent
+from medical_agent.rag import query_medical_rag
 from medical_agent.api.schemas import (
     CitationResponse,
     ErrorResponse,
@@ -119,8 +119,8 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
 
         logger.info(f"Health profile: age={health_profile.get('age')}, symptoms={len(symptoms)}")
 
-        # Run ReActAgent
-        analysis, raw_citations = await query_medical_agent(
+        # Run RAG retrieval
+        analysis, raw_citations = await query_medical_rag(
             ph_value=request.ph_value,
             health_profile=health_profile if health_profile else None,
         )
