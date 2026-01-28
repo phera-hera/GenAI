@@ -30,8 +30,8 @@ st.markdown("""
     <style>
         /* Dark background */
         .stApp {
-            background-color: #0a0e27;
-            color: #e0e0e0;
+            background-color: #000000;
+            color: #a0a0a0;
         }
 
         /* Input fields - grey */
@@ -40,14 +40,14 @@ st.markdown("""
         .stSelectbox > div > div > select,
         .stMultiSelect > div > div > div {
             background-color: #2a2e3e !important;
-            color: #e0e0e0 !important;
+            color: #a0a0a0 !important;
             border: 1px solid #444 !important;
         }
 
         /* Button - violet */
         .stButton > button {
             background-color: #7c3aed !important;
-            color: white !important;
+            color: #d0d0d0 !important;
             border: none !important;
             border-radius: 6px !important;
             font-weight: 600 !important;
@@ -62,23 +62,65 @@ st.markdown("""
         /* Text areas */
         .stTextArea > div > div > textarea {
             background-color: #2a2e3e !important;
-            color: #e0e0e0 !important;
+            color: #a0a0a0 !important;
             border: 1px solid #444 !important;
         }
 
         /* Container styling */
         .stContainer {
-            background-color: #0a0e27;
+            background-color: #000000;
         }
 
-        /* Citation box */
-        .citation-box {
+        /* Inline citation tooltip */
+        .citation {
+            position: relative;
+            display: inline-block;
+            color: #7c3aed;
+            cursor: help;
+            font-weight: 600;
+            text-decoration: none;
+            margin: 0 2px;
+        }
+
+        .citation:hover {
+            color: #9f67ff;
+        }
+
+        .citation .tooltip {
+            visibility: hidden;
+            width: 350px;
             background-color: #1a1f2e;
-            border-left: 4px solid #7c3aed;
-            padding: 14px;
-            margin: 12px 0;
-            border-radius: 4px;
-            font-size: 0.95rem;
+            color: #c0c0c0;
+            text-align: left;
+            border-radius: 6px;
+            padding: 12px;
+            border: 1px solid #7c3aed;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -175px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            font-size: 0.85rem;
+            line-height: 1.4;
+        }
+
+        .citation .tooltip::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #7c3aed transparent transparent transparent;
+        }
+
+        .citation:hover .tooltip {
+            visibility: visible;
+            opacity: 1;
         }
 
         /* Chat message - user */
@@ -104,12 +146,12 @@ st.markdown("""
 
         /* Title styling */
         h1 {
-            color: #e0e0e0;
+            color: #c0c0c0;
             text-align: center;
         }
 
         h3 {
-            color: #b0b0b0;
+            color: #909090;
             margin-top: 20px;
         }
     </style>
@@ -377,12 +419,34 @@ def show_form_page():
             # Initialize chat history with first exchange
             st.session_state.chat_history = [
                 {"role": "user", "content": f"pH: {ph_value}"},
-                {"role": "assistant", "content": st.session_state.first_response},
+                {"role": "assistant", "content": st.session_state.first_response, "citations": st.session_state.first_citations},
             ]
 
             # Switch to chat page
             st.session_state.page = "chat"
             st.rerun()
+
+
+# ===== HELPER FUNCTIONS =====
+def format_response_with_citations(response_text: str, citations: list) -> str:
+    """Add inline citation tooltips to the response text."""
+    if not citations:
+        return response_text
+
+    # Build citation HTML
+    citation_html = ""
+    for i, citation in enumerate(citations, 1):
+        title = citation.get('title', 'Unknown Paper')
+        preview = citation.get('relevant_section', '')
+        tooltip_content = f"<strong>{title}</strong><br><br>{preview[:200]}..."
+
+        citation_html += f'''
+        <span class="citation">[{i}]
+            <span class="tooltip">{tooltip_content}</span>
+        </span>'''
+
+    # Add citations at the end of the response
+    return f"{response_text} {citation_html}"
 
 
 # ===== PAGE 2: CHAT =====
@@ -411,23 +475,12 @@ def show_chat_page():
             if msg["role"] == "user":
                 st.markdown(f'<div class="chat-user"><strong>You:</strong> {msg["content"]}</div>', unsafe_allow_html=True)
             else:
-                st.markdown(f'<div class="chat-assistant"><strong>Assistant:</strong> {msg["content"]}</div>', unsafe_allow_html=True)
-
-        # Display citations for last assistant message
-        if st.session_state.first_citations and len(st.session_state.chat_history) > 1:
-            if st.session_state.chat_history[-1]["role"] == "assistant":
-                st.markdown("#### References")
-                for i, citation in enumerate(st.session_state.first_citations, 1):
-                    paper_id = citation.get('paper_id', 'Unknown')
-                    title = citation.get('title', 'Unknown Paper')
-                    preview = citation.get('relevant_section', '')
-                    st.markdown(
-                        f"""<div class="citation-box">
-                        <strong>[{i}] {title}</strong><br>
-                        {preview[:150]}...
-                        </div>""",
-                        unsafe_allow_html=True,
-                    )
+                # Add inline citations to assistant messages
+                content = msg["content"]
+                citations = msg.get("citations", [])
+                if citations:
+                    content = format_response_with_citations(content, citations)
+                st.markdown(f'<div class="chat-assistant"><strong>Assistant:</strong> {content}</div>', unsafe_allow_html=True)
 
     st.markdown("")
     st.markdown("---")
@@ -455,10 +508,11 @@ def show_chat_page():
                 )
 
             if response:
-                # Add assistant response
+                # Add assistant response with citations
                 assistant_response = response.get("agent_reply", "")
-                st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
-                st.session_state.first_citations = response.get("citations", [])
+                citations = response.get("citations", [])
+                st.session_state.chat_history.append({"role": "assistant", "content": assistant_response, "citations": citations})
+                st.session_state.first_citations = citations  # Keep for reference
                 st.rerun()
         else:
             st.warning("Please enter a question.")
