@@ -32,12 +32,23 @@ def build_retriever(similarity_top_k: int = 5):
     Returns:
         Configured retriever object
     """
-    # Initialize embeddings
+    # Initialize embeddings with correct endpoint (separate embedding resource)
+    embed_api_key = (
+        settings.azure_openai_embedding_api_key or settings.azure_openai_api_key
+    )
+    embed_endpoint = (
+        settings.azure_openai_embedding_endpoint or settings.azure_openai_endpoint
+    )
+    embed_api_version = (
+        settings.azure_openai_embedding_api_version or settings.azure_openai_api_version
+    )
+
     embed_model = AzureOpenAIEmbedding(
-        model="text-embedding-3-large",
-        api_key=settings.azure_openai_api_key,
-        azure_endpoint=settings.azure_openai_endpoint,
-        api_version=settings.azure_openai_api_version,
+        model=settings.azure_openai_embedding_deployment_name,
+        deployment_name=settings.azure_openai_embedding_deployment_name,
+        api_key=embed_api_key,
+        azure_endpoint=embed_endpoint,
+        api_version=embed_api_version,
     )
 
     # Connect to vector store
