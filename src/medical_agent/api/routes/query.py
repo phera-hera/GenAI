@@ -88,13 +88,17 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
         if symptoms:
             health_profile["symptoms"] = symptoms
 
+        # Add notes from symptoms
+        if request.symptoms and request.symptoms.notes:
+            health_profile["notes"] = request.symptoms.notes
+
         # Add medical context
         if request.diagnoses:
             health_profile["diagnoses"] = request.diagnoses
         if request.ethnic_backgrounds:
-            health_profile["ethnicity"] = request.ethnic_backgrounds
+            health_profile["ethnic_backgrounds"] = request.ethnic_backgrounds
         if request.menstrual_cycle:
-            health_profile["menstrual_status"] = request.menstrual_cycle
+            health_profile["menstrual_cycle"] = request.menstrual_cycle
 
         # Birth control
         bc_list = []
@@ -116,6 +120,15 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
         hrt_list.extend(request.hrt or [])
         if hrt_list:
             health_profile["hormone_therapy"] = hrt_list
+
+        # Fertility journey
+        if request.fertility_journey:
+            fertility_info = []
+            if request.fertility_journey.current_status:
+                fertility_info.append(request.fertility_journey.current_status)
+            fertility_info.extend(request.fertility_journey.fertility_treatments or [])
+            if fertility_info:
+                health_profile["fertility_journey"] = fertility_info
 
         logger.info(f"Health profile: age={health_profile.get('age')}, symptoms={len(symptoms)}")
 

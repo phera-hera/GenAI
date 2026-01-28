@@ -47,10 +47,14 @@ class SymptomsInfo(BaseModel):
     )
     smell: list[str] = Field(
         default_factory=list,
-        description="Fishy, Sour, Chemical-like, Very strong or rotten",
+        description='Strong and unpleasant ("fishy"), Sour, Chemical-like, Very strong or rotten',
     )
     urine: list[str] = Field(
         default_factory=list, description="Frequent urination, Burning sensation"
+    )
+    notes: str | None = Field(
+        None,
+        description="User's free text notes about additional symptoms or how they've been feeling",
     )
 
 
@@ -76,17 +80,17 @@ class QueryRequest(BaseModel):
     # Optional: Medical background
     diagnoses: list[str] = Field(
         default_factory=list,
-        description="Selected diagnoses related to hormones (multiselect)",
+        description="Diagnoses related to hormones: Adenomyosis, Amenorrhea, Cushing's syndrome, Diabetes, Endometriosis, Intersex status, Thyroid disorder, Uterine fibroids, Polycystic ovary syndrome (PCOS), Premature ovarian insufficiency (POI)",
     )
     ethnic_backgrounds: list[str] = Field(
         default_factory=list,
-        description="Selected ethnic background(s) (multiselect)",
+        description="Ethnic backgrounds: African / Black, North African, Arab, Middle Eastern, East Asian, South Asian, Southeast Asian, Central Asian / Caucasus, Latin American / Latina / Latinx / Hispanic, Sinti / Roma, White / Caucasian / European, Mixed / Multiple ancestries, Other",
     )
 
     # Optional: Hormone status
     menstrual_cycle: str | None = Field(
         None,
-        description="Regular, Irregular, No period for 12+ months, Never had period, Perimenopause, or Postmenopause",
+        description="Regular, Irregular, No period for 12+ months, Never had a period, Perimenopausal, Postmenopausal",
     )
     birth_control: BirthControlInfo | None = Field(
         None, description="Birth control methods"
@@ -108,20 +112,14 @@ class QueryRequest(BaseModel):
     # Optional: Symptoms
     symptoms: SymptomsInfo | None = Field(None, description="Current symptoms")
 
-    # Optional: Notes (NOT sent to agent, just for app context)
-    notes: str | None = Field(
-        None,
-        description="User's free text notes - NOT included in medical analysis",
-    )
-
     model_config = {
         "json_schema_extra": {
             "examples": [
                 {
                     "ph_value": 4.8,
                     "age": 28,
-                    "diagnoses": ["PCOS"],
-                    "ethnic_backgrounds": ["South Asian"],
+                    "diagnoses": ["Polycystic ovary syndrome (PCOS)", "Endometriosis"],
+                    "ethnic_backgrounds": ["South Asian", "East Asian"],
                     "menstrual_cycle": "Irregular",
                     "birth_control": {"pill": "Combined pill"},
                     "symptoms": {
@@ -129,8 +127,8 @@ class QueryRequest(BaseModel):
                         "vulva_vagina": ["Itchy"],
                         "smell": [],
                         "urine": [],
+                        "notes": "Feeling stressed lately",
                     },
-                    "notes": "Feeling stressed lately",
                 }
             ]
         }

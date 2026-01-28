@@ -174,8 +174,8 @@ def call_medical_rag_api(
                 "vulva_vagina": health_profile.get("symptoms", {}).get("vulva_vagina", []),
                 "smell": health_profile.get("symptoms", {}).get("smell", []),
                 "urine": health_profile.get("symptoms", {}).get("urine", []),
+                "notes": health_profile.get("symptoms", {}).get("notes"),
             },
-            "notes": health_profile.get("notes"),
         }
 
         logger.info(f"Calling API: {API_URL}")
@@ -240,10 +240,9 @@ def show_form_page():
                 "Regular",
                 "Irregular",
                 "No period for 12+ months",
-                "Never had period",
-                "Perimenopause",
-                "Postmenopause",
-                "Not sure",
+                "Never had a period",
+                "Perimenopausal",
+                "Postmenopausal",
             ],
             index=None,
             label_visibility="collapsed",
@@ -252,17 +251,20 @@ def show_form_page():
         st.markdown("")
 
         # Diagnoses
-        st.markdown("**Medical History** (Select if applicable)")
+        st.markdown("**Medical History - Diagnoses Related to Hormones** (Select if applicable)")
         diagnoses = st.multiselect(
             "Select any relevant diagnoses",
             options=[
-                "PCOS",
-                "Endometriosis",
-                "Thyroid disorder",
+                "Adenomyosis",
+                "Amenorrhea",
+                "Cushing's syndrome",
                 "Diabetes",
-                "BV",
-                "Yeast infection",
-                "None",
+                "Endometriosis",
+                "Intersex status",
+                "Thyroid disorder",
+                "Uterine fibroids",
+                "Polycystic ovary syndrome (PCOS)",
+                "Premature ovarian insufficiency (POI)",
             ],
             label_visibility="collapsed",
         )
@@ -294,7 +296,7 @@ def show_form_page():
 
         smell = st.multiselect(
             "Odor",
-            options=["None", "Fishy", "Sour", "Chemical-like", "Very strong/rotten"],
+            options=["None", 'Strong and unpleasant ("fishy")', "Sour", "Chemical-like", "Very strong or rotten"],
             label_visibility="collapsed",
         )
 
@@ -311,14 +313,19 @@ def show_form_page():
         ethnic_backgrounds = st.multiselect(
             "Select if applicable",
             options=[
-                "South Asian",
-                "East Asian",
-                "African",
-                "European",
-                "Hispanic/Latino",
+                "African / Black",
+                "North African",
+                "Arab",
                 "Middle Eastern",
-                "Mixed",
-                "Prefer not to say",
+                "East Asian",
+                "South Asian",
+                "Southeast Asian",
+                "Central Asian / Caucasus",
+                "Latin American / Latina / Latinx / Hispanic",
+                "Sinti / Roma",
+                "White / Caucasian / European",
+                "Mixed / Multiple ancestries",
+                "Other",
             ],
             label_visibility="collapsed",
         )
@@ -344,15 +351,15 @@ def show_form_page():
         health_profile = {
             "age": int(age) if age else None,
             "menstrual_cycle": menstrual_cycle,
-            "diagnoses": [d for d in diagnoses if d != "None"],
+            "diagnoses": diagnoses,
             "symptoms": {
                 "discharge": discharge,
                 "vulva_vagina": vulva_vagina,
                 "smell": smell,
                 "urine": urine,
+                "notes": notes,
             },
             "ethnic_backgrounds": ethnic_backgrounds,
-            "notes": notes,
         }
 
         # Call API (initial request - no user_message or session_id yet)

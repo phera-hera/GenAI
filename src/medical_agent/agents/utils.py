@@ -78,18 +78,37 @@ def build_health_context(ph_value: float, health_profile: dict[str, Any]) -> str
     if age := health_profile.get("age"):
         context_parts.append(f"Age: {age}")
 
+    if ethnic_backgrounds := health_profile.get("ethnic_backgrounds"):
+        context_parts.append(f"Ethnicity: {', '.join(ethnic_backgrounds)}")
+
     if diagnoses := health_profile.get("diagnoses"):
         context_parts.append(f"Diagnoses: {', '.join(diagnoses)}")
 
     if menstrual_cycle := health_profile.get("menstrual_cycle"):
         context_parts.append(f"Menstrual Cycle: {menstrual_cycle}")
 
+    if birth_control := health_profile.get("birth_control"):
+        context_parts.append(f"Birth Control: {', '.join(birth_control)}")
+
+    if hormone_therapy := health_profile.get("hormone_therapy"):
+        context_parts.append(f"Hormone Therapy: {', '.join(hormone_therapy)}")
+
+    if fertility_journey := health_profile.get("fertility_journey"):
+        context_parts.append(f"Fertility Status: {', '.join(fertility_journey)}")
+
     if symptoms := health_profile.get("symptoms"):
-        symptom_list = []
-        for key, values in symptoms.items():
-            if values:
-                symptom_list.extend(values)
-        if symptom_list:
-            context_parts.append(f"Symptoms: {', '.join(symptom_list)}")
+        # Check if symptoms is a dict or list
+        if isinstance(symptoms, dict):
+            symptom_list = []
+            for key, values in symptoms.items():
+                if values:
+                    symptom_list.extend(values)
+            if symptom_list:
+                context_parts.append(f"Symptoms: {', '.join(symptom_list)}")
+        elif isinstance(symptoms, list) and symptoms:
+            context_parts.append(f"Symptoms: {', '.join(symptoms)}")
+
+    if notes := health_profile.get("notes"):
+        context_parts.append(f"Additional Notes: {notes}")
 
     return "\n".join(context_parts)
