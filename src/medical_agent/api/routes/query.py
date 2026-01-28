@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 
-from medical_agent.rag import query_medical_rag
+from medical_agent.agents import medical_rag_app
 from medical_agent.api.schemas import (
     CitationResponse,
     ErrorResponse,
@@ -119,35 +119,65 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
 
         logger.info(f"Health profile: age={health_profile.get('age')}, symptoms={len(symptoms)}")
 
-        # Run RAG retrieval
-        analysis, raw_citations = await query_medical_rag(
-            ph_value=request.ph_value,
-            health_profile=health_profile if health_profile else None,
+        # Generate session ID for conversation tracking
+        session_id = str(uuid.uuid4())
+
+        # Build initial query message
+        # Create a concise query about the pH value
+        query_text = f"My vaginal pH is {request.ph_value}. What does this mean?"
+        if symptoms:
+            query_text += f" I'm experiencing: {', '.join(symptoms[:3])}."
+
+        # Prepare state for LangGraph
+        initial_state = {
+            "messages": [{"role": "user", "content": query_text}],
+            "ph_value": request.ph_value,
+            "health_profile": health_profile if health_profile else {},
+        }
+
+        # Run LangGraph workflow
+        logger.info(f"Invoking medical RAG graph for session: {session_id}")
+        result = medical_rag_app.invoke(
+            initial_state,
+            config={"configurable": {"thread_id": session_id}}
         )
 
-        # Build citations
+        # Extract response from result
+        assistant_message = result["messages"][-1]
+        agent_reply = assistant_message.get("content", "") if isinstance(assistant_message, dict) else getattr(assistant_message, "content", "")
+
+        # Extract citations from result
+        raw_citations = result.get("citations", [])
+
+        # Format citations for response
         citations = []
         for c in raw_citations:
-            if c.get("paper_id"):
-                citations.append(
-                    CitationResponse(
-                        paper_id=c["paper_id"],
-                        title=c.get("title"),
-                        authors=c.get("authors"),
-                        doi=c.get("doi"),
-                        relevant_section=c.get("relevant_section"),
-                    )
+            # Map graph citations to CitationResponse schema
+            citations.append(
+                CitationResponse(
+                    paper_id=str(c.get("node_id", c.get("id", "unknown"))),
+                    title=c.get("file", "Unknown Paper"),
+                    authors=None,  # Not available in chunk metadata
+                    doi=None,  # Not available in chunk metadata
+                    relevant_section=c.get("preview", ""),
                 )
+            )
 
         logger.info(f"Analysis complete: {len(citations)} citations")
+
+        # Build medical disclaimer
+        disclaimers = (
+            "This analysis is for informational purposes only and does not constitute medical advice. "
+            "Always consult with a qualified healthcare provider for medical concerns, diagnosis, or treatment."
+        )
 
         processing_time_ms = int((time.time() - start_time) * 1000)
 
         return QueryResponse(
-            session_id=str(uuid.uuid4()),
+            session_id=session_id,
             ph_value=request.ph_value,
-            agent_reply=analysis.agent_reply,
-            disclaimers=analysis.disclaimers,
+            agent_reply=agent_reply,
+            disclaimers=disclaimers,
             citations=citations,
             processing_time_ms=processing_time_ms,
         )
