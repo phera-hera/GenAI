@@ -115,7 +115,6 @@ def check_azure_openai_configuration() -> dict:
     try:
         from medical_agent.core.config import settings
         from medical_agent.infrastructure.azure_openai import (
-            get_llama_index_llm,
             get_llama_index_embed_model,
         )
 
@@ -133,21 +132,28 @@ def check_azure_openai_configuration() -> dict:
         print(f"       Embedding deployment: {settings.azure_openai_embedding_deployment_name}")
         results["configured"] = True
 
-        # Test LLM
+        # Test LLM (LangChain)
         try:
-            llm = get_llama_index_llm()
-            print_status("LLM client", True)
+            from langchain_openai import AzureChatOpenAI
+
+            llm = AzureChatOpenAI(
+                deployment_name=settings.azure_openai_deployment_name,
+                api_key=settings.azure_openai_api_key,
+                azure_endpoint=settings.azure_openai_endpoint,
+                api_version=settings.azure_openai_api_version,
+            )
+            print_status("LLM client (LangChain)", True)
             results["chat_connected"] = True
         except Exception as e:
-            print_status("LLM client", False, str(e))
+            print_status("LLM client (LangChain)", False, str(e))
 
-        # Test embedding model
+        # Test embedding model (LlamaIndex)
         try:
             embed_model = get_llama_index_embed_model()
-            print_status("Embedding model", True)
+            print_status("Embedding model (LlamaIndex)", True)
             results["embedding_connected"] = True
         except Exception as e:
-            print_status("Embedding model", False, str(e))
+            print_status("Embedding model (LlamaIndex)", False, str(e))
 
     except ImportError as e:
         print_status("Dependencies", False, f"Missing: {e}")

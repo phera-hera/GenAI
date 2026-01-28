@@ -119,14 +119,21 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
 
         logger.info(f"Health profile: age={health_profile.get('age')}, symptoms={len(symptoms)}")
 
-        # Generate session ID for conversation tracking
-        session_id = str(uuid.uuid4())
+        # Use provided session_id or generate new one
+        session_id = request.session_id if request.session_id else str(uuid.uuid4())
+        logger.info(f"Session ID: {session_id}")
 
-        # Build initial query message
-        # Create a concise query about the pH value
-        query_text = f"My vaginal pH is {request.ph_value}. What does this mean?"
-        if symptoms:
-            query_text += f" I'm experiencing: {', '.join(symptoms[:3])}."
+        # Build query message
+        if request.user_message:
+            # Follow-up question - use user's actual message
+            query_text = request.user_message
+            logger.info(f"Follow-up query: {query_text[:100]}...")
+        else:
+            # Initial request - auto-generate query from pH value
+            query_text = f"My vaginal pH is {request.ph_value}. What does this mean?"
+            if symptoms:
+                query_text += f" I'm experiencing: {', '.join(symptoms[:3])}."
+            logger.info(f"Initial query: {query_text[:100]}...")
 
         # Prepare state for LangGraph
         initial_state = {
@@ -135,7 +142,7 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
             "health_profile": health_profile if health_profile else {},
         }
 
-        # Run LangGraph workflow
+        # Run LangGraph workflow with session continuity
         logger.info(f"Invoking medical RAG graph for session: {session_id}")
 
         result = medical_rag_app.invoke(

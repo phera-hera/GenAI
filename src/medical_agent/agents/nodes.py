@@ -7,10 +7,13 @@ Each node is a pure function that takes state and returns state updates.
 import logging
 from typing import Any
 
-from medical_agent.infrastructure.azure_openai import get_llama_index_llm
+from langchain_core.messages import HumanMessage
+from langchain_openai import AzureChatOpenAI
+
 from medical_agent.agents.llamaindex_retrieval import retrieve_nodes
 from medical_agent.agents.state import MedicalAgentState
 from medical_agent.agents.utils import build_health_context, format_retrieved_nodes
+from medical_agent.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +78,7 @@ def generate_node(state: MedicalAgentState) -> dict[str, Any]:
     Generation node: Produces medical response with inline citations.
 
     Process:
-        1. Get LLM from Azure OpenAI factory
+        1. Get LLM from Azure OpenAI (LangChain)
         2. Build strict medical prompt with docs_text
         3. Include conversation history for context
         4. Generate response with inline [1][2] citations
@@ -89,8 +92,14 @@ def generate_node(state: MedicalAgentState) -> dict[str, Any]:
     """
     logger.info("Executing generate_node")
 
-    # Get Azure OpenAI LLM
-    llm = get_llama_index_llm()
+    # Get Azure OpenAI LLM (LangChain)
+    llm = AzureChatOpenAI(
+        deployment_name=settings.azure_openai_deployment_name,
+        api_key=settings.azure_openai_api_key,
+        azure_endpoint=settings.azure_openai_endpoint,
+        api_version=settings.azure_openai_api_version,
+        temperature=0.0,  # Deterministic for medical responses
+    )
 
     # Extract context
     docs_text = state.get("docs_text", "")
@@ -140,14 +149,14 @@ MEDICAL DOCUMENTS:
 
     system_prompt += f"\nCURRENT QUESTION:\n{current_query}\n\nProvide a clear, evidence-based answer with inline citations:"
 
-    logger.info("Generating response with Azure OpenAI")
+    logger.info("Generating response with Azure OpenAI (LangChain)")
 
-    # Generate response
-    response = llm.complete(system_prompt)
+    # Generate response using LangChain
+    response = llm.invoke([HumanMessage(content=system_prompt)])
 
     logger.info("Response generated successfully")
 
-    # Return as assistant message
+    # Return as assistant message (LangChain returns AIMessage object)
     return {
-        "messages": [{"role": "assistant", "content": response.text}]
+        "messages": [response]  # LangChain message format - native interoperability
     }

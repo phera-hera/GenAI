@@ -191,8 +191,8 @@ The project uses the `src/` layout. All imports use the `medical_agent` namespac
 from medical_agent.core.config import settings
 from medical_agent.core.exceptions import AppException
 
-# Infrastructure (LlamaIndex factories)
-from medical_agent.infrastructure import get_llama_index_llm, get_llama_index_embed_model
+# Infrastructure (embedding models for retrieval)
+from medical_agent.infrastructure import get_llama_index_embed_model
 from medical_agent.infrastructure.database.models import Paper, PaperChunk
 
 # Ingestion pipeline

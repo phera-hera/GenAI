@@ -1,8 +1,11 @@
-"""Infrastructure service clients."""
+"""Infrastructure service clients.
+
+Note: LLM generation now uses LangChain (see agents/nodes.py).
+This module only exports embedding models for retrieval.
+"""
 
 from medical_agent.infrastructure.azure_openai import (
     get_llama_index_embed_model,
-    get_llama_index_llm,
 )
 from medical_agent.infrastructure.gcp_storage import (
     GCPStorageClient,
@@ -12,6 +15,5 @@ from medical_agent.infrastructure.gcp_storage import (
 __all__ = [
     "GCPStorageClient",
     "get_storage_client",
-    "get_llama_index_llm",
     "get_llama_index_embed_model",
 ]

@@ -1,4 +1,8 @@
-"""LlamaIndex Azure OpenAI LLM and embedding model factories."""
+"""LlamaIndex Azure OpenAI embedding model factory.
+
+Note: LLM generation uses LangChain (see agents/nodes.py).
+This module only provides embedding models for retrieval.
+"""
 
 import logging
 
@@ -6,22 +10,6 @@ from medical_agent.core.config import settings
 from medical_agent.core.exceptions import LLMError
 
 logger = logging.getLogger(__name__)
-
-
-def get_llama_index_llm():
-    """Get a LlamaIndex-compatible Azure OpenAI LLM."""
-    from llama_index.llms.azure_openai import AzureOpenAI as LlamaAzureOpenAI
-
-    if not settings.is_azure_openai_configured():
-        raise LLMError("Azure OpenAI LLM is not configured")
-
-    return LlamaAzureOpenAI(
-        model=settings.azure_openai_deployment_name,
-        deployment_name=settings.azure_openai_deployment_name,
-        api_key=settings.azure_openai_api_key,
-        azure_endpoint=settings.azure_openai_endpoint,
-        api_version=settings.azure_openai_api_version,
-    )
 
 
 def get_llama_index_embed_model():

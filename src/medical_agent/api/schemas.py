@@ -62,6 +62,14 @@ class QueryRequest(BaseModel):
         ..., ge=0.0, le=14.0, description="pH value from test strip (0-14) - REQUIRED"
     )
 
+    # Optional: Conversation context
+    user_message: str | None = Field(
+        None, description="User's actual question (for follow-ups). If None, auto-generates initial query."
+    )
+    session_id: str | None = Field(
+        None, description="Session ID for conversation continuity. If None, creates new session."
+    )
+
     # Optional: Basic info
     age: int | None = Field(None, ge=0, le=120, description="User's age")
 

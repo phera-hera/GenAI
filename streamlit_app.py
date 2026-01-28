@@ -145,9 +145,17 @@ if "first_citations" not in st.session_state:
 def call_medical_rag_api(
     ph_value: float,
     health_profile: dict[str, Any],
+    user_message: str | None = None,
+    session_id: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Call the medical RAG API endpoint.
+
+    Args:
+        ph_value: pH measurement value
+        health_profile: User's health information
+        user_message: User's actual question (for follow-ups)
+        session_id: Session ID for conversation continuity
 
     Returns:
         Response dict or None on error
@@ -155,6 +163,8 @@ def call_medical_rag_api(
     try:
         payload = {
             "ph_value": ph_value,
+            "user_message": user_message,
+            "session_id": session_id,
             "age": health_profile.get("age"),
             "diagnoses": health_profile.get("diagnoses", []),
             "ethnic_backgrounds": health_profile.get("ethnic_backgrounds", []),
@@ -345,7 +355,7 @@ def show_form_page():
             "notes": notes,
         }
 
-        # Call API
+        # Call API (initial request - no user_message or session_id yet)
         with st.spinner("Analyzing your pH reading..."):
             response = call_medical_rag_api(ph_value, health_profile)
 
@@ -353,6 +363,7 @@ def show_form_page():
             # Store in session state
             st.session_state.ph_value = ph_value
             st.session_state.health_profile = health_profile
+            st.session_state.session_id = response.get("session_id")  # Store session ID from API
             st.session_state.first_response = response.get("agent_reply", "")
             st.session_state.first_citations = response.get("citations", [])
 
@@ -381,6 +392,7 @@ def show_chat_page():
             st.session_state.chat_history = []
             st.session_state.first_response = None
             st.session_state.first_citations = None
+            st.session_state.session_id = None  # Reset session for new conversation
             st.rerun()
 
     st.markdown("")
@@ -426,11 +438,13 @@ def show_chat_page():
             # Add user message to history
             st.session_state.chat_history.append({"role": "user", "content": follow_up})
 
-            # Call API with follow-up
+            # Call API with follow-up question and session_id for context
             with st.spinner("Analyzing your question..."):
                 response = call_medical_rag_api(
-                    st.session_state.ph_value,
-                    st.session_state.health_profile,
+                    ph_value=st.session_state.ph_value,
+                    health_profile=st.session_state.health_profile,
+                    user_message=follow_up,  # Send actual follow-up question
+                    session_id=st.session_state.session_id,  # Reuse session for memory
                 )
 
             if response:
