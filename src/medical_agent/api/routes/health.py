@@ -79,7 +79,7 @@ async def detailed_health_check() -> DetailedHealthStatus:
     Checks the health of individual components:
     - Database connectivity
     - Azure OpenAI configuration
-    - Langfuse configuration
+    - LangSmith configuration
     - GCP configuration
     
     Note: This is a configuration check, not a connectivity test.
@@ -95,9 +95,9 @@ async def detailed_health_check() -> DetailedHealthStatus:
             "configured": settings.is_azure_openai_configured(),
             "deployment": settings.azure_openai_deployment_name,
         },
-        "langfuse": {
-            "configured": settings.is_langfuse_configured(),
-            "host": settings.langfuse_host,
+        "langsmith": {
+            "configured": settings.is_langsmith_configured(),
+            "project": settings.langsmith_project,
         },
         "gcp": {
             "configured": bool(settings.gcp_project_id),
@@ -189,7 +189,7 @@ class CloudServicesStatus(BaseModel):
     response_model=CloudServicesStatus,
     status_code=status.HTTP_200_OK,
     summary="Cloud Services Health Check",
-    description="Checks connectivity to all cloud services (GCP, Azure, Langfuse).",
+    description="Checks connectivity to all cloud services (GCP, Azure, LangSmith).",
 )
 async def cloud_services_check() -> CloudServicesStatus:
     """
@@ -198,7 +198,7 @@ async def cloud_services_check() -> CloudServicesStatus:
     Tests connections to:
     - GCP Cloud Storage
     - Azure OpenAI
-    - Langfuse
+    - LangSmith
     """
     services: dict[str, dict[str, Any]] = {}
 
@@ -208,8 +208,8 @@ async def cloud_services_check() -> CloudServicesStatus:
     # Check Azure OpenAI
     services["azure_openai"] = await _check_azure_openai()
 
-    # Check Langfuse
-    services["langfuse"] = await _check_langfuse()
+    # Check LangSmith
+    services["langsmith"] = await _check_langsmith()
     
     # Determine overall status
     all_configured = all(
@@ -282,28 +282,23 @@ async def _check_azure_openai() -> dict[str, Any]:
     return result
 
 
-async def _check_langfuse() -> dict[str, Any]:
-    """Check Langfuse connectivity."""
+async def _check_langsmith() -> dict[str, Any]:
+    """Check LangSmith configuration."""
     result = {
         "configured": False,
         "connected": False,
-        "host": settings.langfuse_host,
+        "project": settings.langsmith_project,
         "error": None,
     }
-    
+
     try:
-        from medical_agent.infrastructure.langfuse_client import LangfuseClient
-        
-        client = LangfuseClient()
-        result["configured"] = client.is_configured()
-        
-        if result["configured"]:
-            client.verify_connection()
-            result["connected"] = True
+        result["configured"] = settings.is_langsmith_configured()
+        # LangSmith doesn't need connectivity check - env vars are enough
+        result["connected"] = result["configured"]
     except Exception as e:
         result["error"] = str(e)
-        logger.warning(f"Langfuse check failed: {e}")
-    
+        logger.warning(f"LangSmith check failed: {e}")
+
     return result
 
 

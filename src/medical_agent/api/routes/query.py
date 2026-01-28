@@ -137,6 +137,7 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
 
         # Run LangGraph workflow
         logger.info(f"Invoking medical RAG graph for session: {session_id}")
+
         result = medical_rag_app.invoke(
             initial_state,
             config={"configurable": {"thread_id": session_id}}

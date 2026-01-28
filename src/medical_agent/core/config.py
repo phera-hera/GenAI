@@ -136,11 +136,11 @@ class Settings(BaseSettings):
         return bool(self.gcp_project_id and self.gcp_bucket_name)
 
     # -------------------------------------------------------------------------
-    # Langfuse Observability Settings
+    # LangSmith Observability Settings
     # -------------------------------------------------------------------------
-    langfuse_public_key: str = Field(default="")
-    langfuse_secret_key: str = Field(default="")
-    langfuse_host: str = Field(default="https://cloud.langfuse.com")
+    langsmith_api_key: str = Field(default="")
+    langsmith_tracing: bool = Field(default=False)
+    langsmith_project: str = Field(default="phera-agent")
 
     # -------------------------------------------------------------------------
     # Metadata Extraction Settings
@@ -200,9 +200,9 @@ class Settings(BaseSettings):
         # Fall back to main credentials if separate ones not provided
         return bool(self.azure_openai_api_key and self.azure_openai_endpoint)
 
-    def is_langfuse_configured(self) -> bool:
-        """Check if Langfuse observability is configured."""
-        return bool(self.langfuse_public_key and self.langfuse_secret_key)
+    def is_langsmith_configured(self) -> bool:
+        """Check if LangSmith observability is configured."""
+        return bool(self.langsmith_api_key and self.langsmith_tracing)
 
 
 @lru_cache

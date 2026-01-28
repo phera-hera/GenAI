@@ -1,7 +1,7 @@
 """
 FemTech Medical RAG Agent - Main Application Entry Point
 
-A mobile-first diagnostic platform for women's vaginal health using 
+A mobile-first diagnostic platform for women's vaginal health using
 RAG-based medical reasoning over curated research papers.
 
 IMPORTANT: This system is purely informational and NOT diagnostic.
@@ -12,9 +12,14 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+# Load environment variables from .env file
+# This must happen before importing settings so LangChain can access LANGSMITH_* vars
+load_dotenv()
 
 from medical_agent.api.routes import router
 from medical_agent.core.config import settings
@@ -41,27 +46,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Environment: {settings.environment}")
     logger.info(f"Debug mode: {settings.debug}")
-    
-    # TODO: Initialize database connection pool
-    # TODO: Initialize Langfuse client if configured
-    # TODO: Warm up embedding model connection
-    
+
     if settings.is_azure_openai_configured():
         logger.info("Azure OpenAI is configured")
     else:
         logger.warning("Azure OpenAI is NOT configured - LLM features will be unavailable")
-    
-    if settings.is_langfuse_configured():
-        logger.info("Langfuse observability is configured")
+
+    if settings.is_langsmith_configured():
+        logger.info(f"LangSmith tracing enabled (project: {settings.langsmith_project})")
     else:
-        logger.warning("Langfuse is NOT configured - tracing will be disabled")
+        logger.info("LangSmith tracing disabled")
     
     yield
-    
+
     # Shutdown
     logger.info("Shutting down application...")
-    # TODO: Close database connections
-    # TODO: Flush Langfuse traces
     logger.info("Application shutdown complete")
 
 

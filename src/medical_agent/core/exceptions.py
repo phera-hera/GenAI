@@ -233,7 +233,7 @@ class LLMError(AppException):
 
 
 class ObservabilityError(AppException):
-    """Raised when Langfuse observability operations fail."""
+    """Raised when observability operations fail."""
 
     def __init__(
         self,
