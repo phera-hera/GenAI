@@ -197,7 +197,7 @@ from medical_agent.infrastructure.database.models import Paper, PaperChunk
 
 # Ingestion pipeline
 from medical_agent.ingestion.pipeline import MedicalIngestionPipeline, PipelineConfig
-from medical_agent.ingestion.metadata import MedicalMetadataExtractor, ExtractedMetadata
+from medical_agent.ingestion.metadata import MedicalMetadata, create_medical_metadata_extractor
 
 # RAG (LlamaIndex CitationQueryEngine)
 from medical_agent.rag import query_medical_rag, MedicalAnalysisResponse

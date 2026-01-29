@@ -38,7 +38,7 @@ from medical_agent.core.config import settings
 from medical_agent.core.exceptions import DatabaseException
 from medical_agent.infrastructure.database.models import Paper, PaperChunk
 from medical_agent.infrastructure.database.session import get_session_context
-from medical_agent.ingestion.metadata.extractor import MedicalMetadataExtractor
+from medical_agent.ingestion.metadata import create_medical_metadata_extractor
 
 logger = logging.getLogger(__name__)
 
@@ -185,8 +185,9 @@ class MedicalIngestionPipeline:
             dimensions=self.config.embedding_dimensions,
         )
 
-        # Initialize metadata extractor
-        self.metadata_extractor = MedicalMetadataExtractor()
+        # Initialize metadata extractor using native LlamaIndex
+        # This replaces custom extractor, LLM client, and normalizer (650+ lines → 1 line)
+        self.metadata_extractor = create_medical_metadata_extractor()
 
         # Initialize HybridChunker for token-aware section chunking
         # Use default tokenizer (HybridChunker has its own tokenizer handling)
