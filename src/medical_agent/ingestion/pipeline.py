@@ -55,9 +55,6 @@ class PipelineConfig:
     # Metadata extraction settings
     extract_metadata: bool = True
 
-    # Storage settings
-    delete_existing_chunks: bool = True  # Delete old chunks before re-ingestion
-
     # Chunking settings for HybridChunker
     max_chunk_tokens: int = 512   # Maximum tokens per chunk (prevents embedding truncation)
     min_chunk_tokens: int = 64    # Minimum tokens per chunk (avoids tiny chunks)
@@ -217,33 +214,12 @@ class MedicalIngestionPipeline:
         """Compute SHA-256 hash of file content for deduplication."""
         return hashlib.sha256(content).hexdigest()
 
-    async def check_duplicate(
-        self,
-        session: AsyncSession,
-        file_hash: str,
-    ) -> Paper | None:
-        """
-        Check if a paper with the same hash already exists.
-
-        Args:
-            session: Database session
-            file_hash: SHA-256 hash of the PDF
-
-        Returns:
-            Existing Paper if duplicate found, None otherwise
-        """
-        stmt = select(Paper).where(Paper.file_hash == file_hash)
-        result = await session.execute(stmt)
-        return result.scalar_one_or_none()
-
     async def process_paper(
         self,
         session: AsyncSession,
         pdf_content: bytes,
         gcp_path: str,
         paper_id: uuid.UUID | None = None,
-        skip_duplicate_check: bool = False,
-        progress_callback: Callable | None = None,
     ) -> PipelineResult:
         """
         Process a PDF through the LlamaIndex ingestion pipeline.
@@ -252,9 +228,7 @@ class MedicalIngestionPipeline:
             session: Database session
             pdf_content: Raw PDF bytes
             gcp_path: GCP Cloud Storage path to the PDF
-            paper_id: Optional existing paper ID (for re-processing)
-            skip_duplicate_check: Skip hash-based deduplication
-            progress_callback: Optional callback(stage, progress) for updates
+            paper_id: Optional paper ID (defaults to new UUID)
 
         Returns:
             PipelineResult with processing details
@@ -271,19 +245,7 @@ class MedicalIngestionPipeline:
         file_hash = self.compute_file_hash(pdf_content)
 
         try:
-            # Check for duplicate
-            if not skip_duplicate_check:
-                existing = await self.check_duplicate(session, file_hash)
-                if existing:
-                    result.paper_id = existing.id
-                    result.paper_title = existing.title
-                    result.errors.append(f"Duplicate paper found: {existing.id}")
-                    return result
-
             # Stage 1: Parse PDF with DoclingReader
-            if progress_callback:
-                progress_callback("parse", 0)
-
             parse_start = time.monotonic()
             try:
                 # DoclingReader expects a file path, so write to temp file
@@ -320,13 +282,7 @@ class MedicalIngestionPipeline:
             finally:
                 result.parse_time_ms = int((time.monotonic() - parse_start) * 1000)
 
-            if progress_callback:
-                progress_callback("parse", 100)
-
             # Stage 2-4: Run ingestion pipeline (chunk, extract metadata, embed)
-            if progress_callback:
-                progress_callback("pipeline", 0)
-
             pipeline_start = time.monotonic()
             try:
                 # Run the complete pipeline
@@ -348,22 +304,16 @@ class MedicalIngestionPipeline:
             finally:
                 result.pipeline_time_ms = int((time.monotonic() - pipeline_start) * 1000)
 
-            if progress_callback:
-                progress_callback("pipeline", 100)
-
             if not nodes:
                 result.errors.append("No nodes generated from pipeline")
                 return result
 
             # Stage 5: Store in database
-            if progress_callback:
-                progress_callback("store", 0)
-
             store_start = time.monotonic()
             try:
-                # Create or update paper record
-                logger.info(f"Upserting paper record for {result.paper_id}")
-                paper = await self._upsert_paper(
+                # Create paper record
+                logger.info(f"Creating paper record for {result.paper_id}")
+                paper = await self._insert_paper(
                     session=session,
                     paper_id=result.paper_id,
                     document=document,
@@ -373,12 +323,6 @@ class MedicalIngestionPipeline:
                 result.paper_id = paper.id
                 result.paper_title = paper.title
                 logger.info(f"Paper record created: {paper.title}")
-
-                # Delete existing chunks if re-processing
-                if self.config.delete_existing_chunks:
-                    logger.info(f"Deleting existing chunks for paper {paper.id}")
-                    deleted_count = await self._delete_paper_chunks(session, paper.id)
-                    logger.info(f"Deleted {deleted_count} existing chunks")
 
                 # Add paper_id to all nodes' metadata
                 for node in nodes:
@@ -405,46 +349,13 @@ class MedicalIngestionPipeline:
             finally:
                 result.store_time_ms = int((time.monotonic() - store_start) * 1000)
 
-            if progress_callback:
-                progress_callback("store", 100)
-
         finally:
             result.total_time_ms = int((time.monotonic() - start_time) * 1000)
 
         logger.info(result.summary())
         return result
 
-    async def _delete_paper_chunks(
-        self,
-        session: AsyncSession,
-        paper_id: uuid.UUID,
-    ) -> int:
-        """
-        Delete all chunks for a paper by querying metadata_ JSONB.
-
-        Args:
-            session: Database session
-            paper_id: UUID of the paper
-
-        Returns:
-            Number of deleted chunks
-        """
-        from sqlalchemy import delete
-
-        try:
-            # Query by metadata_->>'paper_id' since paper_id is now in JSONB
-            stmt = delete(PaperChunk).where(
-                PaperChunk.metadata_['paper_id'].astext == str(paper_id)
-            )
-            result = await session.execute(stmt)
-            deleted_count = result.rowcount
-            await session.commit()
-            return deleted_count
-        except Exception as e:
-            logger.error(f"Failed to delete chunks: {e}", exc_info=True)
-            raise DatabaseException(f"Failed to delete chunks: {e}")
-
-    async def _upsert_paper(
+    async def _insert_paper(
         self,
         session: AsyncSession,
         paper_id: uuid.UUID,
@@ -452,18 +363,7 @@ class MedicalIngestionPipeline:
         gcp_path: str,
         file_hash: str,
     ) -> Paper:
-        """Create or update a paper record."""
-        # Check if paper exists by ID first
-        stmt = select(Paper).where(Paper.id == paper_id)
-        result = await session.execute(stmt)
-        paper = result.scalar_one_or_none()
-
-        # If not found by ID, check by file_hash (for re-processing with new ID)
-        if not paper:
-            stmt = select(Paper).where(Paper.file_hash == file_hash)
-            result = await session.execute(stmt)
-            paper = result.scalar_one_or_none()
-
+        """Create a new paper record."""
         # Extract metadata from document
         metadata = document.metadata or {}
         title = metadata.get("title", "Untitled")
@@ -476,67 +376,22 @@ class MedicalIngestionPipeline:
         publication_year = metadata.get("publication_year")
         doi = metadata.get("doi")
 
-        if paper:
-            # Update existing
-            paper.title = title or paper.title
-            paper.authors = authors or paper.authors
-            paper.journal = journal or paper.journal
-            paper.publication_year = publication_year or paper.publication_year
-            paper.doi = doi or paper.doi
-            paper.abstract = abstract or paper.abstract
-            paper.file_hash = file_hash
-            paper.gcp_path = gcp_path
-        else:
-            # Create new
-            paper = Paper(
-                id=paper_id,
-                title=title,
-                authors=authors,
-                journal=journal,
-                publication_year=publication_year,
-                doi=doi,
-                abstract=abstract,
-                gcp_path=gcp_path,
-                file_hash=file_hash,
-                is_processed=False,
-            )
-            session.add(paper)
-
+        # Always create new (no update logic)
+        paper = Paper(
+            id=paper_id,
+            title=title,
+            authors=authors,
+            journal=journal,
+            publication_year=publication_year,
+            doi=doi,
+            abstract=abstract,
+            gcp_path=gcp_path,
+            file_hash=file_hash,
+            is_processed=False,
+        )
+        session.add(paper)
         await session.flush()
         return paper
-
-    async def reprocess_paper(
-        self,
-        session: AsyncSession,
-        paper_id: uuid.UUID,
-        pdf_content: bytes,
-    ) -> PipelineResult:
-        """
-        Reprocess an existing paper.
-
-        Args:
-            session: Database session
-            paper_id: ID of the existing paper
-            pdf_content: Raw PDF bytes
-
-        Returns:
-            PipelineResult with processing details
-        """
-        # Get existing paper
-        stmt = select(Paper).where(Paper.id == paper_id)
-        result = await session.execute(stmt)
-        paper = result.scalar_one_or_none()
-
-        if not paper:
-            raise DatabaseException(f"Paper not found: {paper_id}")
-
-        return await self.process_paper(
-            session=session,
-            pdf_content=pdf_content,
-            gcp_path=paper.gcp_path,
-            paper_id=paper_id,
-            skip_duplicate_check=True,
-        )
 
 
 # Convenience functions
