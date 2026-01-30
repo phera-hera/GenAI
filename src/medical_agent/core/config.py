@@ -98,28 +98,6 @@ class Settings(BaseSettings):
     docling_enable_ocr: bool = Field(default=True, description="Enable hybrid OCR for scanned papers")
 
     # -------------------------------------------------------------------------
-    # LlamaParser Settings (DEPRECATED - use Docling)
-    # -------------------------------------------------------------------------
-    # LlamaParser now uses LVM mode with your Azure OpenAI GPT-4o model
-    # No separate API key needed - uses Azure OpenAI credentials
-    # DEPRECATED: Use Docling instead
-    llama_cloud_api_key: str = Field(default="")  # Deprecated, kept for backward compat
-
-    def is_llama_parser_configured(self) -> bool:
-        """
-        Check if LlamaParser LVM mode is properly configured.
-
-        DEPRECATED: Use Docling instead.
-        LVM mode requires Azure OpenAI to be configured (same as medical reasoning).
-        """
-        return bool(
-            self.azure_openai_api_key
-            and self.azure_openai_endpoint
-            and self.azure_openai_api_version
-            and self.azure_openai_deployment_name
-        )
-
-    # -------------------------------------------------------------------------
     # GCP Settings
     # -------------------------------------------------------------------------
     gcp_project_id: str = Field(default="")

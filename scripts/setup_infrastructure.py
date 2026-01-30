@@ -7,13 +7,13 @@ FemTech Medical RAG Agent. It provides:
 
 1. Step-by-step setup instructions
 2. Connection verification for all services
-3. Health checks for GCP, Azure, and Langfuse
+3. Health checks for GCP, Azure, and LangSmith
 
 Usage:
     python scripts/setup_infrastructure.py --check-all
     python scripts/setup_infrastructure.py --check gcp
     python scripts/setup_infrastructure.py --check azure
-    python scripts/setup_infrastructure.py --check langfuse
+    python scripts/setup_infrastructure.py --check langsmith
     python scripts/setup_infrastructure.py --setup-guide
 """
 
@@ -163,43 +163,30 @@ def check_azure_openai_configuration() -> dict:
     return results
 
 
-def check_langfuse_configuration() -> dict:
-    """Check Langfuse configuration and connectivity."""
-    print_section("Langfuse Observability")
-    
-    results = {"configured": False, "connected": False}
-    
+def check_langsmith_configuration() -> dict:
+    """Check LangSmith configuration and connectivity."""
+    print_section("LangSmith Observability (Optional)")
+
+    results = {"configured": False}
+
     try:
         from medical_agent.core.config import settings
-        from medical_agent.infrastructure.langfuse_client import LangfuseClient
-        
-        client = LangfuseClient()
-        
+
         # Check configuration
-        if client.is_configured():
+        if settings.is_langsmith_configured():
             print_status("Configuration", True)
-            print(f"       Host: {client.host}")
+            print(f"       Project: {settings.langsmith_project}")
             results["configured"] = True
         else:
             print_status(
                 "Configuration", False,
-                "LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY not set"
+                "LANGSMITH_API_KEY or LANGSMITH_TRACING not set (optional)"
             )
             return results
-        
-        # Verify connection
-        try:
-            client.verify_connection()
-            print_status("Connection", True)
-            results["connected"] = True
-        except Exception as e:
-            print_status("Connection", False, str(e))
-            
-    except ImportError as e:
-        print_status("Dependencies", False, f"Missing: {e}")
+
     except Exception as e:
         print_status("Error", False, str(e))
-    
+
     return results
 
 
@@ -380,26 +367,7 @@ STEP 4: LlamaParser (LlamaCloud) Setup
    LLAMA_CLOUD_API_KEY=llx-your-api-key
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 5: Langfuse Setup
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-1. Create Langfuse Account:
-   → Go to https://cloud.langfuse.com
-   → Sign up (free tier available)
-   → Create new project
-
-2. Get API Keys:
-   → Go to Settings → API Keys
-   → Create new API key pair
-   → Copy Public Key and Secret Key
-
-3. Set Environment Variables:
-   LANGFUSE_PUBLIC_KEY=pk-lf-xxxxxxxx
-   LANGFUSE_SECRET_KEY=sk-lf-xxxxxxxx
-   LANGFUSE_HOST=https://cloud.langfuse.com
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 6: Local Development Setup
+STEP 5: Local Development Setup
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 1. Copy environment template:
@@ -445,10 +413,8 @@ def check_all() -> bool:
     if not azure_openai_results["chat_connected"]:
         all_passed = False
 
-    # Check Langfuse
-    langfuse_results = check_langfuse_configuration()
-    if not langfuse_results["connected"]:
-        all_passed = False
+    # Check LangSmith (optional)
+    check_langsmith_configuration()
     
     # Summary
     print_header("Summary")
@@ -476,7 +442,7 @@ def main():
     )
     parser.add_argument(
         "--check",
-        choices=["gcp", "azure", "azure-openai", "langfuse", "database"],
+        choices=["gcp", "azure", "azure-openai", "langsmith", "database"],
         help="Check specific service",
     )
     parser.add_argument(
@@ -497,8 +463,8 @@ def main():
             check_gcp_configuration()
         elif args.check in ("azure", "azure-openai"):
             check_azure_openai_configuration()
-        elif args.check == "langfuse":
-            check_langfuse_configuration()
+        elif args.check == "langsmith":
+            check_langsmith_configuration()
         elif args.check == "database":
             check_database_configuration()
     else:
