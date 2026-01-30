@@ -440,10 +440,7 @@ def format_response_with_citations(response_text: str, citations: list) -> str:
         preview = citation.get('relevant_section', '')
         tooltip_content = f"<strong>{title}</strong><br><br>{preview[:200]}..."
 
-        citation_html += f'''
-        <span class="citation">[{i}]
-            <span class="tooltip">{tooltip_content}</span>
-        </span>'''
+        citation_html += f'<span class="citation">[{i}]<span class="tooltip">{tooltip_content}</span></span>'
 
     # Add citations at the end of the response
     return f"{response_text} {citation_html}"

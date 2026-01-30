@@ -1,17 +1,13 @@
 """
-Batch Ingestion Script for Medical Research Papers
+Paper Ingestion Script - Interactive Mode
 
 Downloads PDFs from GCP Cloud Storage and processes them through
 the ingestion pipeline (parse → chunk → embed → store in pgvector).
 
 Usage:
-    python scripts/ingest_papers.py                    # Ingest all papers
-    python scripts/ingest_papers.py --prefix papers/   # Filter by prefix
-    python scripts/ingest_papers.py --limit 5          # Limit to 5 papers
-    python scripts/ingest_papers.py --dry-run          # Preview without processing
+    python scripts/ingest_papers.py    # Interactive mode
 """
 
-import argparse
 import asyncio
 import logging
 import sys
@@ -235,43 +231,201 @@ async def ingest_papers(
     return progress
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Ingest medical research papers from GCP bucket"
-    )
-    parser.add_argument(
-        "--prefix",
-        default="",
-        help="GCP path prefix to filter papers (default: root)",
-    )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=None,
-        help="Maximum number of papers to process",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview papers without processing",
-    )
-    parser.add_argument(
-        "--no-skip-existing",
-        action="store_true",
-        help="Re-process papers even if they exist in database",
-    )
+def display_papers_list(papers: list[str]) -> None:
+    """Display papers with numbered list."""
+    print("\n" + "-" * 80)
+    print(f"Available Papers ({len(papers)} total):")
+    print("-" * 80)
+    for i, pdf_name in enumerate(papers, 1):
+        print(f"{i}. {pdf_name}")
+    print("-" * 80)
 
-    args = parser.parse_args()
 
+def parse_selected_ids(input_str: str, max_index: int) -> list[int]:
+    """Parse comma-separated numbers from user input."""
     try:
-        asyncio.run(
-            ingest_papers(
-                prefix=args.prefix,
-                limit=args.limit,
-                dry_run=args.dry_run,
-                skip_existing=not args.no_skip_existing,
+        indices = [int(x.strip()) - 1 for x in input_str.split(",")]
+        # Validate indices
+        if any(i < 0 or i >= max_index for i in indices):
+            raise ValueError("Index out of range")
+        return indices
+    except (ValueError, IndexError):
+        return []
+
+
+async def interactive_mode():
+    """Interactive mode for ingesting papers."""
+    print("\n" + "=" * 80)
+    print("PAPER INGESTION - INTERACTIVE MODE")
+    print("=" * 80)
+
+    # Verify configuration
+    if not settings.is_gcp_configured():
+        print("ERROR: GCP is not configured. Set GCP_PROJECT_ID and GCP_BUCKET_NAME in .env")
+        return
+
+    if not settings.is_azure_openai_configured():
+        print("ERROR: Azure OpenAI is not configured. Set AZURE_OPENAI_API_KEY and related vars in .env")
+        return
+
+    # Get storage client and list all papers
+    storage = get_storage_client()
+    try:
+        logger.info(f"Connecting to GCP bucket: {settings.gcp_bucket_name}")
+        storage.verify_connection()
+    except Exception as e:
+        print(f"ERROR: Failed to connect to GCP bucket: {e}")
+        return
+
+    logger.info("Listing all available PDFs...")
+    all_pdfs = storage.list_pdfs(prefix="")
+
+    if not all_pdfs:
+        print("No PDF files found in bucket!")
+        return
+
+    print(f"Found {len(all_pdfs)} total papers in bucket")
+
+    while True:
+        print("\nOptions:")
+        print("1. List papers")
+        print("2. Ingest all papers")
+        print("3. Ingest by selecting IDs")
+        print("4. Exit")
+
+        choice = input("\nEnter your choice (1-4): ").strip()
+
+        if choice == "1":
+            # List all papers
+            display_papers_list(all_pdfs)
+
+        elif choice == "2":
+            # Ingest all papers
+            display_papers_list(all_pdfs)
+            confirm = input(f"\nIngest all {len(all_pdfs)} papers? (yes/no): ").strip().lower()
+            if confirm != "yes":
+                print("Ingestion cancelled.")
+                continue
+
+            # Check Azure connectivity
+            if not await check_azure_connectivity():
+                print("ERROR: Azure OpenAI is not reachable. Check API key and endpoint.")
+                continue
+
+            # Initialize database
+            logger.info("Initializing database...")
+            await init_db()
+
+            # Perform ingestion
+            print("\nStarting ingestion...")
+            await ingest_papers(
+                prefix="",
+                limit=None,
+                dry_run=False,
+                skip_existing=True,
             )
-        )
+
+        elif choice == "3":
+            # Ingest by selecting IDs
+            display_papers_list(all_pdfs)
+
+            ids_input = input("\nEnter paper IDs to ingest (e.g., 1,3,5,8): ").strip()
+            selected_indices = parse_selected_ids(ids_input, len(all_pdfs))
+
+            if not selected_indices:
+                print("Invalid input. Please enter valid paper numbers.")
+                continue
+
+            selected_papers = [all_pdfs[i] for i in selected_indices]
+
+            # Show preview
+            print("\n" + "-" * 80)
+            print(f"Papers to ingest ({len(selected_papers)} selected):")
+            print("-" * 80)
+            for paper in selected_papers:
+                print(f"  • {paper}")
+            print("-" * 80)
+
+            confirm = input(f"\nIngest {len(selected_papers)} papers? (yes/no): ").strip().lower()
+            if confirm != "yes":
+                print("Ingestion cancelled.")
+                continue
+
+            # Check Azure connectivity
+            if not await check_azure_connectivity():
+                print("ERROR: Azure OpenAI is not reachable. Check API key and endpoint.")
+                continue
+
+            # Initialize database
+            logger.info("Initializing database...")
+            await init_db()
+
+            # Perform ingestion for selected papers
+            print("\nStarting ingestion...")
+            pipeline = MedicalIngestionPipeline(
+                config=PipelineConfig(
+                    max_chunk_tokens=512,
+                    extract_metadata=True,
+                )
+            )
+
+            progress = IngestionProgress(len(selected_papers))
+
+            for gcp_path in selected_papers:
+                progress.print_progress(gcp_path)
+
+                try:
+                    logger.info(f"[{progress.completed + 1}/{progress.total}] Downloading: {gcp_path}")
+                    pdf_content = storage.download_pdf(gcp_path)
+                    logger.info(f"Downloaded {len(pdf_content)} bytes")
+
+                    logger.info(f"[{progress.completed + 1}/{progress.total}] Starting pipeline for: {gcp_path}")
+                    async with get_session_context() as session:
+                        result = await pipeline.process_paper(
+                            session=session,
+                            pdf_content=pdf_content,
+                            gcp_path=f"gs://{settings.gcp_bucket_name}/{gcp_path}",
+                            skip_duplicate_check=True,
+                        )
+
+                        logger.info(f"Committing database transaction for paper {result.paper_id}")
+                        await session.commit()
+                        logger.info(f"Transaction committed successfully")
+
+                    progress.update(result)
+
+                    if result.success:
+                        logger.info(
+                            f"SUCCESS: {result.paper_title or gcp_path} - "
+                            f"{result.stored_count} chunks stored in {result.total_time_ms}ms"
+                        )
+                    else:
+                        logger.error(f"FAILED: {gcp_path} - {result.errors}")
+
+                except Exception as e:
+                    logger.error(f"ERROR processing {gcp_path}: {e}")
+                    from uuid import uuid4
+                    failed_result = PipelineResult(
+                        paper_id=uuid4(),
+                        paper_title=None,
+                        gcp_path=gcp_path,
+                        errors=[str(e)],
+                    )
+                    progress.update(failed_result)
+
+            progress.print_summary()
+
+        elif choice == "4":
+            print("Exiting...")
+            break
+
+        else:
+            print("Invalid choice. Please try again.")
+
+
+def main():
+    try:
+        asyncio.run(interactive_mode())
     except KeyboardInterrupt:
         print("\nIngestion interrupted by user")
         sys.exit(1)

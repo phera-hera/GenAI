@@ -1,4 +1,3 @@
-"""Simplified medical metadata extraction using native LlamaIndex functionality."""
 
 import logging
 from typing import Any, Sequence
