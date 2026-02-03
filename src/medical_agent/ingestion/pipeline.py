@@ -327,6 +327,11 @@ class MedicalIngestionPipeline:
             # Stage 5: Store in database
             store_start = time.monotonic()
             try:
+                # Extract metadata from first node (contains LLM-extracted metadata)
+                extracted_metadata = {}
+                if nodes and nodes[0].metadata:
+                    extracted_metadata = nodes[0].metadata
+
                 # Create paper record
                 logger.info(f"Creating paper record for {result.paper_id}")
                 paper = await self._insert_paper(
@@ -335,6 +340,7 @@ class MedicalIngestionPipeline:
                     document=document,
                     gcp_path=gcp_path,
                     file_hash=file_hash,
+                    extracted_metadata=extracted_metadata,
                 )
                 result.paper_id = paper.id
                 result.paper_title = paper.title
@@ -380,24 +386,36 @@ class MedicalIngestionPipeline:
         document: Document,
         gcp_path: str,
         file_hash: str,
+        extracted_metadata: dict | None = None,
     ) -> Paper:
         """Create a new paper record."""
         # Extract metadata from document
         metadata = document.metadata or {}
-        title = metadata.get("title", "Untitled")
-        authors = metadata.get("authors")
-        if isinstance(authors, list):
-            authors = ", ".join(authors)
 
+        # Use extracted metadata from LLM if available, otherwise fall back to document metadata
+        extracted = extracted_metadata or {}
+
+        # Get title: prefer extracted title, fall back to document title or GCP path
+        title = extracted.get("title") or metadata.get("title")
+        if not title:
+            # Extract from GCP path (filename without extension)
+            title = Path(gcp_path).stem
+
+        # Get other fields from extracted metadata
+        authors = extracted.get("author")  # From LLM extraction
+        publication_year = extracted.get("publication_year")  # From LLM extraction
+        doi = extracted.get("doi")  # From LLM extraction
+
+        # Abstract stays as is (not extracted yet)
         abstract = metadata.get("abstract")
+
+        # Journal stays as is (not extracted yet)
         journal = metadata.get("journal")
-        publication_year = metadata.get("publication_year")
-        doi = metadata.get("doi")
 
         # Always create new (no update logic)
         paper = Paper(
             id=paper_id,
-            title=title,
+            title=title or "Untitled",
             authors=authors,
             journal=journal,
             publication_year=publication_year,

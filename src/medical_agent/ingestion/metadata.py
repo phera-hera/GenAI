@@ -4,7 +4,8 @@ from typing import Any, Sequence
 
 from llama_index.core.bridge.pydantic import BaseModel, Field
 from llama_index.core.extractors import BaseExtractor, PydanticProgramExtractor
-from llama_index.core.llms import LLM
+from llama_index.core.llms import ChatMessage, LLM, MessageRole
+from llama_index.core.prompts import ChatPromptTemplate
 from llama_index.core.schema import BaseNode
 from llama_index.llms.azure_openai import AzureOpenAI
 
@@ -106,26 +107,62 @@ class MedicalMetadata(BaseModel):
         description="Confidence score for extraction quality (0.0-1.0). Higher is better."
     )
 
+    title: str | None = Field(
+        default=None,
+        description="Paper title if found in document (e.g., title page, header, or metadata)."
+    )
+
+    publication_year: int | None = Field(
+        default=None,
+        description="Publication year if found in document (e.g., '2017', '2023'). Extract as integer year only."
+    )
+
+    author: str | None = Field(
+        default=None,
+        description="Primary author(s) if found (e.g., 'Smith et al.' or 'Smith, J. and Jones, M.'). First author is sufficient."
+    )
+
+    doi: str | None = Field(
+        default=None,
+        description="Digital Object Identifier if found (e.g., '10.1234/example' or full URL). Extract identifier only."
+    )
+
 
 # Extraction prompt that emphasizes standardized terms
-EXTRACTION_PROMPT = """You are extracting medical metadata from research papers for a women's health application.
+EXTRACTION_PROMPT = """You are extracting metadata from research papers for a women's health application.
 
 CRITICAL RULES:
-1. ONLY extract terms that are EXPLICITLY MENTIONED in the text
-2. DO NOT infer, extrapolate, or hallucinate relevance
-3. Use EXACT standardized terms from the field descriptions (e.g., "Polycystic ovary syndrome (PCOS)" not "PCOS")
-4. Map variations to standard terms:
-   - "PCOS" → "Polycystic ovary syndrome (PCOS)"
-   - "candida" → "Yeast infection"
-   - "IUD" → "IUD"
-   - "birth control pill" → "Pill"
-5. Return EMPTY arrays for categories with no explicit mentions
-6. Provide a confidence score (0.0-1.0) based on clarity of mentions
-7. Focus on abstract, methods, and results sections
+1. ONLY extract information that is EXPLICITLY MENTIONED in the text
+2. DO NOT infer, extrapolate, or hallucinate
+3. Use EXACT standardized terms from field descriptions
 
-If text is sparse or unclear, return empty arrays and low confidence.
+PAPER METADATA (extract if found):
+- title: Paper title from title page or header
+- publication_year: Year as integer (e.g., 2017, 2023)
+- author: Primary author(s), first author sufficient (e.g., "Smith et al.")
+- doi: Digital Object Identifier only, no URL (e.g., "10.1234/example")
 
-Extract medical metadata from the following text:"""
+MEDICAL METADATA (standardized terms only):
+- ethnicities: African/Black, Asian, Caucasian, Hispanic/Latina, Middle Eastern, Mixed, Native American/Indigenous, North African, Pacific Islander, South Asian, Southeast Asian
+- diagnoses: Adenomyosis, Endometriosis, Bacterial vaginosis, Yeast infection, STI, PCOS, Premature ovarian insufficiency, Thyroid disorder, Fibroids, Ovarian cysts, Pelvic inflammatory disease
+- symptoms: Discharge colors (Creamy, Clear, Yellow, Green, Gray, Pink, Brown), Vaginal Odor, Itchy, Burning, Pelvic Pain, Swelling, Redness, Vaginal Dryness, Frequent Urination, Painful Urination
+- birth_control: Pill, IUD, Implant, Patch, Ring, Injection, Condom, Diaphragm, Sterilization
+- hormone_therapy: HRT, Testosterone, Progesterone, Estrogen, Thyroid Medication
+- fertility_treatments: IVF, IUI, Clomiphene, Letrozole, Gonadotropins, Ovulation Induction
+- menstrual_status: Premenstrual, Menstrual, Postmenstrual, Ovulation, Luteal Phase, Follicular Phase
+- age_range: Age/range if mentioned (e.g., "25-35", "18-45")
+
+MAPPING:
+- "PCOS" → "Polycystic ovary syndrome (PCOS)"
+- "candida" → "Yeast infection"
+- "birth control pill" → "Pill"
+
+OUTPUT:
+- Return empty arrays for categories with no mentions
+- Confidence: 0.0-1.0 based on clarity (higher = clearer)
+- Focus on abstract, introduction, methods, and results sections
+
+Extract metadata from the following text:"""
 
 
 class SimplifiedMedicalMetadataExtractor(BaseExtractor):
@@ -165,6 +202,12 @@ class SimplifiedMedicalMetadataExtractor(BaseExtractor):
         # Store LLM using object.__setattr__ to avoid Pydantic validation
         object.__setattr__(self, "_llm", llm)
         object.__setattr__(self, "_cache", {})
+
+        # Create prompt template with placeholder
+        prompt_template = ChatPromptTemplate.from_messages([
+            ("user", EXTRACTION_PROMPT + "\n\n{text}")
+        ])
+        object.__setattr__(self, "_prompt_template", prompt_template)
 
         logger.info("Created simplified medical metadata extractor")
 
@@ -214,10 +257,11 @@ class SimplifiedMedicalMetadataExtractor(BaseExtractor):
                         logger.warning(f"No text available for extraction (doc {doc_id})")
                         cached_result = self._empty_metadata()
                     else:
-                        # Call LLM with structured output
+                        # Call LLM with structured output using prompt template
                         result = await self._llm.astructured_predict(
                             output_cls=MedicalMetadata,
-                            prompt=f"{EXTRACTION_PROMPT}\n\n{text}",
+                            prompt=self._prompt_template,
+                            text=text,
                         )
 
                         # Convert Pydantic model to dict
@@ -245,6 +289,10 @@ class SimplifiedMedicalMetadataExtractor(BaseExtractor):
     def _empty_metadata(self) -> dict[str, Any]:
         """Return empty metadata structure."""
         return {
+            "title": None,
+            "publication_year": None,
+            "author": None,
+            "doi": None,
             "ethnicities": [],
             "diagnoses": [],
             "symptoms": [],
@@ -301,6 +349,10 @@ def dict_to_medical_metadata(data: dict[str, Any]) -> dict[str, Any]:
     # Validate and clean
     return {
         "extracted_metadata": {
+            "title": data.get("title"),
+            "publication_year": data.get("publication_year"),
+            "author": data.get("author"),
+            "doi": data.get("doi"),
             "ethnicities": data.get("ethnicities", []),
             "diagnoses": data.get("diagnoses", []),
             "symptoms": data.get("symptoms", []),
