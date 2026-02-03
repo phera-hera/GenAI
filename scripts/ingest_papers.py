@@ -199,11 +199,7 @@ async def ingest_papers(
                     gcp_path=f"gs://{settings.gcp_bucket_name}/{gcp_path}",
                     skip_duplicate_check=not skip_existing,
                 )
-
-                # Commit the transaction
-                logger.info(f"Committing database transaction for paper {result.paper_id}")
-                await session.commit()
-                logger.info(f"Transaction committed successfully")
+                # Context manager commits on success, rollback handled in pipeline
 
             progress.update(result)
 
@@ -213,7 +209,7 @@ async def ingest_papers(
                     f"{result.stored_count} chunks stored in {result.total_time_ms}ms"
                 )
             else:
-                logger.error(f"FAILED: {gcp_path} - {result.errors}")
+                logger.warning(f"SKIPPED/FAILED: {gcp_path} - {result.errors}")
 
         except Exception as e:
             logger.error(f"ERROR processing {gcp_path}: {e}")
@@ -387,10 +383,7 @@ async def interactive_mode():
                             gcp_path=f"gs://{settings.gcp_bucket_name}/{gcp_path}",
                             skip_duplicate_check=True,
                         )
-
-                        logger.info(f"Committing database transaction for paper {result.paper_id}")
-                        await session.commit()
-                        logger.info(f"Transaction committed successfully")
+                        # Context manager commits on success, rollback handled in pipeline
 
                     progress.update(result)
 
@@ -400,7 +393,7 @@ async def interactive_mode():
                             f"{result.stored_count} chunks stored in {result.total_time_ms}ms"
                         )
                     else:
-                        logger.error(f"FAILED: {gcp_path} - {result.errors}")
+                        logger.warning(f"SKIPPED/FAILED: {gcp_path} - {result.errors}")
 
                 except Exception as e:
                     logger.error(f"ERROR processing {gcp_path}: {e}")

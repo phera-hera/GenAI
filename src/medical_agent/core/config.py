@@ -6,17 +6,21 @@ All settings can be overridden via environment variables or .env file.
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Project root: src/medical_agent/core/config.py → 3 levels up
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
 class Settings(BaseSettings):
     """Application settings with validation and defaults."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(PROJECT_ROOT / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -41,9 +45,9 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Database Settings (PostgreSQL + pgvector)
     # -------------------------------------------------------------------------
-    postgres_user: str = Field(default="femtech")
-    postgres_password: str = Field(default="femtech_dev_password")
-    postgres_db: str = Field(default="femtech_medical")
+    postgres_user: str = Field(default="postgres")
+    postgres_password: str = Field(default="")
+    postgres_db: str = Field(default="phera_postgres")
     postgres_host: str = Field(default="localhost")
     postgres_port: int = Field(default=5432)
     
@@ -101,7 +105,7 @@ class Settings(BaseSettings):
     # GCP Settings
     # -------------------------------------------------------------------------
     gcp_project_id: str = Field(default="")
-    gcp_bucket_name: str = Field(default="femtech-medical-papers")
+    gcp_bucket_name: str = Field(default="phera_researchpaper")
     gcp_credentials_path: str | None = Field(default=None)
     gcp_cloud_sql_instance: str | None = Field(default=None)
     

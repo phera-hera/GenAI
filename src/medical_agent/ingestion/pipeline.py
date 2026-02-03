@@ -14,14 +14,12 @@ preserving document structure.
 """
 
 import hashlib
-import io
 import logging
 import tempfile
 import time
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from docling.chunking import HybridChunker
@@ -220,6 +218,7 @@ class MedicalIngestionPipeline:
         pdf_content: bytes,
         gcp_path: str,
         paper_id: uuid.UUID | None = None,
+        skip_duplicate_check: bool = False,
     ) -> PipelineResult:
         """
         Process a PDF through the LlamaIndex ingestion pipeline.
@@ -229,6 +228,7 @@ class MedicalIngestionPipeline:
             pdf_content: Raw PDF bytes
             gcp_path: GCP Cloud Storage path to the PDF
             paper_id: Optional paper ID (defaults to new UUID)
+            skip_duplicate_check: If False, check for existing paper by hash/path
 
         Returns:
             PipelineResult with processing details
@@ -243,6 +243,22 @@ class MedicalIngestionPipeline:
         )
 
         file_hash = self.compute_file_hash(pdf_content)
+
+        # Check for duplicates unless skipped
+        if not skip_duplicate_check:
+            existing = await session.execute(
+                select(Paper).where(
+                    (Paper.file_hash == file_hash) | (Paper.gcp_path == gcp_path)
+                )
+            )
+            existing_paper = existing.scalar_one_or_none()
+            if existing_paper:
+                result.errors.append(
+                    f"Duplicate paper: already exists as '{existing_paper.title}' (id: {existing_paper.id})"
+                )
+                result.total_time_ms = int((time.monotonic() - start_time) * 1000)
+                logger.warning(f"Skipping duplicate paper: {gcp_path}")
+                return result
 
         try:
             # Stage 1: Parse PDF with DoclingReader
@@ -339,12 +355,14 @@ class MedicalIngestionPipeline:
 
                 # Mark paper as processed
                 paper.is_processed = True
-                paper.processed_at = datetime.utcnow()
+                paper.processed_at = datetime.now(timezone.utc)
                 await session.flush()
 
             except Exception as e:
                 logger.error(f"Storage failed: {e}", exc_info=True)
                 result.errors.append(f"Store error: {e}")
+                # Rollback to undo the flushed Paper record
+                await session.rollback()
                 return result
             finally:
                 result.store_time_ms = int((time.monotonic() - store_start) * 1000)

@@ -273,14 +273,14 @@ STEP 1: GCP Project Setup
 
 3. Create a Cloud Storage Bucket:
    → Go to Cloud Storage → Buckets
-   → Create bucket: "femtech-medical-papers"
+   → Create bucket: "phera_researchpaper"
    → Region: Choose closest to your users
    → Storage class: Standard
    → Access control: Uniform
 
 4. Create a Service Account:
    → Go to IAM & Admin → Service Accounts
-   → Create service account: "femtech-backend"
+   → Create service account: "phera-backend"
    → Grant roles:
      • Storage Object Admin
      • Cloud SQL Client
@@ -288,7 +288,7 @@ STEP 1: GCP Project Setup
 
 5. Set Environment Variables:
    GCP_PROJECT_ID=your-project-id
-   GCP_BUCKET_NAME=femtech-medical-papers
+   GCP_BUCKET_NAME=phera_researchpaper
    GCP_CREDENTIALS_PATH=/path/to/service-account.json
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -298,7 +298,7 @@ STEP 2: GCP Cloud SQL (Production Database)
 1. Create Cloud SQL Instance:
    → Go to Cloud SQL → Create Instance
    → Choose PostgreSQL 16
-   → Instance ID: "femtech-db"
+   → Instance ID: "phera-pg-main"
    → Set password for 'postgres' user
    → Region: Same as your bucket
    → Machine type: db-f1-micro (dev) or larger
@@ -306,14 +306,14 @@ STEP 2: GCP Cloud SQL (Production Database)
 2. Configure Instance:
    → Enable public IP (or private for production)
    → Add authorized networks for your IP
-   → Create database: "femtech_medical"
+   → Create database: "phera_postgres"
 
 3. Install pgvector Extension:
    → Connect to instance via Cloud Shell or psql
    → Run: CREATE EXTENSION IF NOT EXISTS vector;
 
 4. Set Environment Variables (production):
-   DATABASE_URL=postgresql+asyncpg://USER:PASS@/femtech_medical?host=/cloudsql/PROJECT:REGION:INSTANCE
+   DATABASE_URL=postgresql+asyncpg://USER:PASS@/phera_postgres?host=/cloudsql/PROJECT:REGION:INSTANCE
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 3: Azure OpenAI Setup

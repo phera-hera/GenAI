@@ -221,7 +221,7 @@ class SimplifiedMedicalMetadataExtractor(BaseExtractor):
                         )
 
                         # Convert Pydantic model to dict
-                        cached_result = result.dict()
+                        cached_result = result.model_dump()
 
                         total_terms = sum(
                             len(v) for k, v in cached_result.items()

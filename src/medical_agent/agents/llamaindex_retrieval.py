@@ -71,8 +71,12 @@ def build_retriever(similarity_top_k: int = 5):
         embed_model=embed_model,
     )
 
-    # Return retriever for structured node retrieval
-    return index.as_retriever(similarity_top_k=similarity_top_k)
+    # Return retriever for structured node retrieval with hybrid search
+    # vector_store_query_mode="hybrid" enables BM25 + vector fusion
+    return index.as_retriever(
+        similarity_top_k=similarity_top_k,
+        vector_store_query_mode="hybrid",
+    )
 
 
 def retrieve_nodes(query: str, similarity_top_k: int = 5) -> list[NodeWithScore]:

@@ -70,13 +70,16 @@ class PaperManager:
         """
         Delete a paper and all associated data.
 
-        This method performs the following operations:
+        Deletion order (reversible operations first, irreversible last):
         1. Retrieves paper metadata from database
         2. Counts associated chunks (for reporting)
-        3. Optionally deletes PDF from GCP Cloud Storage (BEFORE db commit)
-        4. Deletes paper from database (cascades to chunks via SQLAlchemy)
-        5. Verifies chunks were cascade-deleted
-        6. Query logs are preserved with their citations intact
+        3. Deletes chunks from database (explicit DELETE, paper_id in JSONB)
+        4. Deletes paper record from database
+        5. Commits DB transaction
+        6. Deletes PDF from GCP Cloud Storage (LAST - irreversible)
+
+        If GCP deletion fails after DB commit, paper is still removed from DB.
+        Orphan file in GCP is acceptable (wasted storage, not data inconsistency).
 
         Args:
             session: Active database session
@@ -86,10 +89,6 @@ class PaperManager:
 
         Returns:
             DeletionResult with details about what was deleted
-
-        Raises:
-            StorageError: If GCP deletion fails (database deletion is rolled back)
-            RuntimeError: If chunk deletion verification fails
 
         Example:
             async with get_session_context() as session:
@@ -127,41 +126,25 @@ class PaperManager:
         deleted_from_gcp = False
         error_msg = None
 
-        # Step 3: Delete from GCP FIRST (before database commit for consistency)
-        if delete_from_gcp and gcp_path:
-            try:
-                # Extract the path from the full GCS URI
-                # gcp_path format: "gs://bucket_name/path/to/file.pdf"
-                # We need just "path/to/file.pdf"
-                gcp_file_path = self._extract_gcp_path(gcp_path)
-
-                deleted_from_gcp = self.storage_client.delete_pdf(gcp_file_path)
-
-                if deleted_from_gcp:
-                    logger.info(f"Deleted PDF from GCP: {gcp_file_path}")
-                else:
-                    error_msg = f"PDF not found in GCP: {gcp_file_path}"
-                    logger.warning(error_msg)
-                    # Continue with DB deletion even if GCP file not found
-
-            except Exception as e:
-                error_msg = f"GCP deletion failed: {str(e)}"
-                logger.error(error_msg)
-                # Rollback and raise - we want atomic operations
-                await session.rollback()
-                raise StorageError(error_msg)
-
-        elif not delete_from_gcp:
-            logger.info("Skipped GCP deletion (delete_from_gcp=False)")
-            deleted_from_gcp = True  # Mark as "successful" since it wasn't requested
-
-        elif not gcp_path:
-            logger.warning("No GCP path found for paper")
-            deleted_from_gcp = True  # Mark as "successful" since there's nothing to delete
-
-        # Step 4: Delete from database (cascades to chunks)
+        # Step 3: Delete chunks first (reversible via rollback)
         try:
-            # Delete the paper record (cascades to chunks via relationship)
+            from sqlalchemy import delete
+
+            # Delete all chunks for this paper
+            delete_chunks_stmt = delete(PaperChunk).where(
+                PaperChunk.metadata_["paper_id"].astext == str(paper_id)
+            )
+            await session.execute(delete_chunks_stmt)
+            logger.info(f"Deleted {chunk_count} chunks for paper '{paper_title}'")
+
+        except Exception as e:
+            error_msg = f"Chunk deletion failed: {str(e)}"
+            logger.error(error_msg)
+            await session.rollback()
+            raise
+
+        # Step 4: Delete paper record (reversible via rollback)
+        try:
             await session.delete(paper)
 
             if commit:
@@ -179,17 +162,33 @@ class PaperManager:
             await session.rollback()
             raise
 
-        # Step 5: Verify chunks were cascade-deleted (only if committed)
-        if commit:
-            remaining_chunks = await self._count_paper_chunks(session, paper_id)
-            if remaining_chunks > 0:
-                error_msg = (
-                    f"Chunk deletion verification failed: "
-                    f"{remaining_chunks} chunks remain after deletion"
-                )
+        # Step 5: Delete from GCP LAST (irreversible, but DB is already clean)
+        if delete_from_gcp and gcp_path:
+            try:
+                gcp_file_path = self._extract_gcp_path(gcp_path)
+                deleted_from_gcp = self.storage_client.delete_pdf(gcp_file_path)
+
+                if deleted_from_gcp:
+                    logger.info(f"Deleted PDF from GCP: {gcp_file_path}")
+                else:
+                    error_msg = f"PDF not found in GCP (may already be deleted): {gcp_file_path}"
+                    logger.warning(error_msg)
+                    deleted_from_gcp = True  # File doesn't exist = effectively deleted
+
+            except Exception as e:
+                # DB is already committed, log error but don't fail
+                # Orphan file in GCP is acceptable (wasted storage, not data inconsistency)
+                error_msg = f"GCP deletion failed (DB already cleaned): {str(e)}"
                 logger.error(error_msg)
-                raise RuntimeError(error_msg)
-            logger.info(f"Verified all {chunk_count} chunks were cascade-deleted")
+                # Don't raise - partial success is acceptable here
+
+        elif not delete_from_gcp:
+            logger.info("Skipped GCP deletion (delete_from_gcp=False)")
+            deleted_from_gcp = True
+
+        elif not gcp_path:
+            logger.warning("No GCP path found for paper")
+            deleted_from_gcp = True
 
         # Return comprehensive result
         result = DeletionResult(
@@ -253,6 +252,16 @@ class PaperManager:
         # Commit all deletions at once
         await session.commit()
         logger.info(f"Bulk deleted {len(results)} papers")
+
+        # Verify all chunks were deleted
+        for result in results:
+            if result.deleted_from_db:
+                remaining = await self._count_paper_chunks(session, result.paper_id)
+                if remaining > 0:
+                    logger.error(
+                        f"Verification failed: {remaining} chunks remain for paper {result.paper_id}"
+                    )
+                    result.error = f"Chunks not fully deleted: {remaining} remain"
 
         return results
 
@@ -353,10 +362,12 @@ class PaperManager:
         session: AsyncSession,
         paper_id: uuid.UUID,
     ) -> int:
-        """Count chunks associated with a paper."""
+        """Count chunks associated with a paper (paper_id stored in metadata_ JSONB)."""
         from sqlalchemy import func
 
-        stmt = select(func.count(PaperChunk.id)).where(PaperChunk.paper_id == paper_id)
+        stmt = select(func.count(PaperChunk.id)).where(
+            PaperChunk.metadata_["paper_id"].astext == str(paper_id)
+        )
         result = await session.execute(stmt)
         return result.scalar() or 0
 
@@ -396,6 +407,8 @@ async def delete_paper_by_id(
     """
     Convenience function to delete a paper by ID.
 
+    Note: Uses commit=False - caller's context manager handles commit.
+
     Usage:
         from medical_agent.core.paper_manager import delete_paper_by_id
         from medical_agent.infrastructure.database.session import get_session_context
@@ -405,7 +418,7 @@ async def delete_paper_by_id(
             print(f"Deleted: {result.paper_title}")
     """
     manager = PaperManager()
-    return await manager.delete_paper(session, paper_id, delete_from_gcp=delete_from_gcp)
+    return await manager.delete_paper(session, paper_id, delete_from_gcp=delete_from_gcp, commit=False)
 
 
 async def delete_paper_by_doi(
@@ -435,6 +448,6 @@ async def delete_paper_by_doi(
     if paper is None:
         raise ValueError(f"Paper not found with DOI: {doi}")
 
-    # Delete using paper ID
+    # Delete using paper ID (commit=False, let caller's context manager handle it)
     manager = PaperManager()
-    return await manager.delete_paper(session, paper.id, delete_from_gcp=delete_from_gcp)
+    return await manager.delete_paper(session, paper.id, delete_from_gcp=delete_from_gcp, commit=False)
