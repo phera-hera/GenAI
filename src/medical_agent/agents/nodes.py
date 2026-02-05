@@ -7,8 +7,9 @@ Each node is a pure function that takes state and returns state updates.
 import logging
 from typing import Any
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_openai import AzureChatOpenAI
+from pydantic import BaseModel, Field
 
 from medical_agent.agents.llamaindex_retrieval import retrieve_nodes
 from medical_agent.agents.state import MedicalAgentState
@@ -16,6 +17,17 @@ from medical_agent.agents.utils import build_health_context, format_retrieved_no
 from medical_agent.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class MedicalResponse(BaseModel):
+    """Structured output schema for medical RAG responses."""
+
+    response: str = Field(
+        description="The medical response text with inline citations like [1], [2]"
+    )
+    used_citations: list[int] = Field(
+        description="List of citation numbers actually used in the response (e.g., [1, 2] if you cited [1] and [2])"
+    )
 
 
 def retrieve_node(state: MedicalAgentState) -> dict[str, Any]:
@@ -60,7 +72,7 @@ def retrieve_node(state: MedicalAgentState) -> dict[str, Any]:
     logger.info(f"Retrieving nodes for query: {user_query[:100]}...")
 
     # Retrieve nodes using existing LlamaIndex retriever
-    nodes = retrieve_nodes(query=enhanced_query, similarity_top_k=5)
+    nodes = retrieve_nodes(query=enhanced_query, similarity_top_k=2)
 
     # Format nodes into citation text
     docs_text, citations = format_retrieved_nodes(nodes)
@@ -78,17 +90,17 @@ def generate_node(state: MedicalAgentState) -> dict[str, Any]:
     Generation node: Produces medical response with inline citations.
 
     Process:
-        1. Get LLM from Azure OpenAI (LangChain)
+        1. Get LLM from Azure OpenAI (LangChain) with structured output
         2. Build strict medical prompt with docs_text
         3. Include conversation history for context
         4. Generate response with inline [1][2] citations
-        5. Return assistant message
+        5. Return assistant message AND list of used citations
 
     Args:
         state: Current agent state with docs_text and conversation history
 
     Returns:
-        State update with new assistant message
+        State update with new assistant message and used_citations
     """
     logger.info("Executing generate_node")
 
@@ -100,6 +112,9 @@ def generate_node(state: MedicalAgentState) -> dict[str, Any]:
         api_version=settings.azure_openai_api_version,
         temperature=0.0,  # Deterministic for medical responses
     )
+
+    # Use structured output to get response + used citations
+    structured_llm = llm.with_structured_output(MedicalResponse)
 
     # Extract context
     docs_text = state.get("docs_text", "")
@@ -128,12 +143,13 @@ def generate_node(state: MedicalAgentState) -> dict[str, Any]:
 
 CRITICAL INSTRUCTIONS:
 1. Answer ONLY using information from the provided medical documents below
-2. Cite sources inline using the citation markers [1][2] that appear in the documents
-3. If the documents do not contain relevant information to answer the question, respond EXACTLY with:
-   "No relevant medical research found in the available documents."
+2. Cite sources inline using the citation markers [1], [2], etc. that appear in the documents
+3. If the documents do not contain relevant information to answer the question, set response to:
+   "No relevant medical research found in the available documents." and used_citations to empty list []
 4. DO NOT use external knowledge or make assumptions beyond what's in the documents
 5. Be concise and medically accurate
 6. Focus on evidence-based information from peer-reviewed research
+7. IMPORTANT: In used_citations, list ONLY the citation numbers you actually referenced in your response
 
 PATIENT CONTEXT:
 {health_context}
@@ -149,14 +165,15 @@ MEDICAL DOCUMENTS:
 
     system_prompt += f"\nCURRENT QUESTION:\n{current_query}\n\nProvide a clear, evidence-based answer with inline citations:"
 
-    logger.info("Generating response with Azure OpenAI (LangChain)")
+    logger.info("Generating structured response with Azure OpenAI (LangChain)")
 
-    # Generate response using LangChain
-    response = llm.invoke([HumanMessage(content=system_prompt)])
+    # Generate structured response
+    result: MedicalResponse = structured_llm.invoke([HumanMessage(content=system_prompt)])
 
-    logger.info("Response generated successfully")
+    logger.info(f"Response generated successfully. Used citations: {result.used_citations}")
 
-    # Return as assistant message (LangChain returns AIMessage object)
+    # Return as assistant message + used citations
     return {
-        "messages": [response]  # LangChain message format - native interoperability
+        "messages": [AIMessage(content=result.response)],
+        "used_citations": result.used_citations
     }

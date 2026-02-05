@@ -4,6 +4,7 @@ Utility functions for RAG processing.
 Handles formatting of retrieved nodes for citation-based responses.
 """
 
+from pathlib import Path
 from typing import Any
 
 from llama_index.core.schema import NodeWithScore
@@ -34,9 +35,11 @@ def format_retrieved_nodes(nodes: list[NodeWithScore]) -> tuple[str, list[dict[s
     for i, node_score in enumerate(nodes, 1):
         node = node_score.node
 
-        # Extract metadata (from paper chunks)
-        file_name = node.metadata.get("file_name", "unknown.pdf")
-        page_label = node.metadata.get("page_label", str(node.metadata.get("page", "N/A")))
+        # Extract metadata from LlamaIndex node metadata
+        # title can be None explicitly, so use `or` not .get() default
+        title = node.metadata.get("title") or Path(node.metadata.get("gcp_path", "")).stem or "Unknown Paper"
+        doc_items = node.metadata.get("doc_items", [])
+        page_no = doc_items[0]["prov"][0]["page_no"] if doc_items and doc_items[0].get("prov") else "N/A"
 
         # Get full text
         chunk_text = node.text.strip()
@@ -44,16 +47,16 @@ def format_retrieved_nodes(nodes: list[NodeWithScore]) -> tuple[str, list[dict[s
         # Create preview (first 100 chars for citation display)
         preview = chunk_text[:100] + "..." if len(chunk_text) > 100 else chunk_text
 
-        # Format: [1]: [Paper:page]: full text
+        # Format: [1]: [Title:page]: full text
         docs_text_parts.append(
-            f"[{i}]: [{file_name}:p{page_label}]: {chunk_text}"
+            f"[{i}]: [{title}:p{page_no}]: {chunk_text}"
         )
 
         # Store citation metadata
         citations.append({
             "id": i,
-            "file": file_name,
-            "page": page_label,
+            "file": title,
+            "page": str(page_no),
             "score": round(node_score.score, 3) if node_score.score else 0.0,
             "preview": preview,
             "node_id": node.node_id,

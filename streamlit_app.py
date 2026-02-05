@@ -6,6 +6,7 @@ Professional dark-themed interface for medical pH analysis with research citatio
 - Page 2: Chat interface for follow-up questions
 """
 
+import html
 import logging
 import uuid
 from typing import Any
@@ -438,7 +439,7 @@ def format_response_with_citations(response_text: str, citations: list) -> str:
     for i, citation in enumerate(citations, 1):
         title = citation.get('title', 'Unknown Paper')
         preview = citation.get('relevant_section', '')
-        tooltip_content = f"<strong>{title}</strong><br><br>{preview[:200]}..."
+        tooltip_content = f"<strong>{html.escape(title)}</strong><br><br>{html.escape(preview[:200])}..."
 
         citation_html += f'<span class="citation">[{i}]<span class="tooltip">{tooltip_content}</span></span>'
 

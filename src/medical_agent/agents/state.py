@@ -19,6 +19,7 @@ class MedicalAgentState(TypedDict):
         health_profile: Dict containing age, symptoms, diagnoses, etc.
         docs_text: Formatted citation text from retrieval ("[1]: [Paper:page]: text")
         citations: List of citation metadata dicts
+        used_citations: List of citation IDs actually used in the response
     """
 
     messages: Annotated[list, add_messages]  # Auto-managed conversation history
@@ -26,3 +27,4 @@ class MedicalAgentState(TypedDict):
     health_profile: dict[str, Any]
     docs_text: str
     citations: list[dict[str, Any]]
+    used_citations: list[int]  # Citation IDs used by LLM in response
