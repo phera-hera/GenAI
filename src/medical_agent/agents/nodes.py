@@ -72,7 +72,7 @@ def retrieve_node(state: MedicalAgentState) -> dict[str, Any]:
     logger.info(f"Retrieving nodes for query: {user_query[:100]}...")
 
     # Retrieve nodes using existing LlamaIndex retriever
-    nodes = retrieve_nodes(query=enhanced_query, similarity_top_k=2)
+    nodes = retrieve_nodes(query=enhanced_query, similarity_top_k=5)
 
     # Format nodes into citation text
     docs_text, citations = format_retrieved_nodes(nodes)
