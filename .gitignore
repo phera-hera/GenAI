@@ -124,6 +124,9 @@ data/*.pdf
 data/*.json
 !data/golden_set/.gitkeep
 
+# Evaluation results (generated at runtime)
+src/medical_agent/evaluation/results/
+
 # Temporary files
 tmp/
 temp/
