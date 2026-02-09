@@ -21,10 +21,15 @@ logger = logging.getLogger(__name__)
 # Retriever Builder
 # ============================================================================
 
+# Module-level cache for retriever singleton
+_retriever_cache = {}
+
 
 def build_retriever(similarity_top_k: int = 5):
     """
-    Build a retriever with vector store connection.
+    Build or return cached retriever with vector store connection.
+
+    Uses module-level caching to avoid rebuilding connections on every query.
 
     Args:
         similarity_top_k: Number of top chunks to retrieve
@@ -32,6 +37,14 @@ def build_retriever(similarity_top_k: int = 5):
     Returns:
         Configured retriever object
     """
+    # Check cache first
+    cache_key = similarity_top_k
+    if cache_key in _retriever_cache:
+        logger.debug(f"Using cached retriever for top_k={similarity_top_k}")
+        return _retriever_cache[cache_key]
+
+    logger.info(f"Building new retriever for top_k={similarity_top_k}")
+
     # Initialize embeddings with correct endpoint (separate embedding resource)
     embed_api_key = (
         settings.azure_openai_embedding_api_key or settings.azure_openai_api_key
@@ -73,10 +86,19 @@ def build_retriever(similarity_top_k: int = 5):
 
     # Return retriever for structured node retrieval with hybrid search
     # vector_store_query_mode="hybrid" enables BM25 + vector fusion
-    return index.as_retriever(
+    # alpha=0.3 means 70% BM25 (keyword) + 30% vector (semantic)
+    # BM25-heavy is optimal for medical terminology precision
+    retriever = index.as_retriever(
         similarity_top_k=similarity_top_k,
         vector_store_query_mode="hybrid",
+        alpha=0.3,  # BM25-heavy for medical terminology precision
     )
+
+    # Cache for future use
+    _retriever_cache[cache_key] = retriever
+    logger.info(f"Retriever cached for top_k={similarity_top_k}")
+
+    return retriever
 
 
 def retrieve_nodes(query: str, similarity_top_k: int = 5) -> list[NodeWithScore]:

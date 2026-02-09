@@ -12,6 +12,7 @@ from langchain_openai import AzureChatOpenAI
 from pydantic import BaseModel, Field
 
 from medical_agent.agents.llamaindex_retrieval import retrieve_nodes
+from medical_agent.agents.reranker import rerank_nodes
 from medical_agent.agents.state import MedicalAgentState
 from medical_agent.agents.utils import build_health_context, format_retrieved_nodes
 from medical_agent.core.config import settings
@@ -36,8 +37,8 @@ def retrieve_node(state: MedicalAgentState) -> dict[str, Any]:
 
     Process:
         1. Extract user's latest message
-        2. Build search query from pH + health context
-        3. Retrieve nodes using LlamaIndex retriever
+        2. Over-retrieve with raw query (no health context dilution)
+        3. Rerank using cross-encoder
         4. Format nodes as citation text with [1][2] markers
         5. Return docs_text + citations for next node
 
@@ -61,23 +62,19 @@ def retrieve_node(state: MedicalAgentState) -> dict[str, Any]:
     last_message = state["messages"][-1]
     user_query = last_message.content if hasattr(last_message, "content") else str(last_message.get("content", ""))
 
-    # Build enhanced query with health context
-    ph_value = state.get("ph_value", 0.0)
-    health_profile = state.get("health_profile", {})
-    health_context = build_health_context(ph_value, health_profile)
-
-    # Combine query with context for better retrieval
-    enhanced_query = f"{user_query}\n\nHealth Context:\n{health_context}"
-
+    # CHANGED: Use raw query for retrieval (no health context dilution)
     logger.info(f"Retrieving nodes for query: {user_query[:100]}...")
 
-    # Retrieve nodes using existing LlamaIndex retriever
-    nodes = retrieve_nodes(query=enhanced_query, similarity_top_k=5)
+    # Over-retrieve for reranking (15 candidates)
+    nodes = retrieve_nodes(query=user_query, similarity_top_k=15)
+
+    # Rerank with cross-encoder and keep top-5
+    nodes = rerank_nodes(query=user_query, nodes=nodes, top_k=5)
 
     # Format nodes into citation text
     docs_text, citations = format_retrieved_nodes(nodes)
 
-    logger.info(f"Retrieved {len(citations)} citations")
+    logger.info(f"Retrieved {len(citations)} citations after reranking")
 
     return {
         "docs_text": docs_text,
