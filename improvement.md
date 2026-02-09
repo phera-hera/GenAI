@@ -1,6 +1,6 @@
 # Medical RAG Pipeline — Improvement Plan
 
-> **Status**: Phase 1 ✅ COMPLETED (Feb 9, 2026) | Phase 2-5 pending
+> **Status**: Phase 1 ✅ COMPLETED (Feb 9, 2026) | Phase 1.5 ✅ COMPLETED | Phase 2-5 pending
 > **Created**: February 2026
 > **Baseline RAGAS Scores (k=5)**: Faithfulness 0.7476 | Context Recall 0.6857 | Context Precision 0.6000 | Answer Relevancy 0.8372 | Factual Correctness 0.3200
 > **Target**: All metrics ≥ 0.85, Factual Correctness ≥ 0.70
@@ -10,6 +10,12 @@
 > - ✅ Added cross-encoder reranking (ms-marco-MiniLM-L-6-v2)
 > - ✅ Tuned hybrid search alpha to 0.3 (70% BM25, 30% vector)
 > - ✅ Implemented retriever caching (singleton pattern)
+>
+> **Phase 1.5 Changes (Conversational Retrieval)**:
+> - ✅ LLM-based initial query generation from form data
+> - ✅ Conversational query rewriting with history for follow-ups
+> - ✅ Integrated with LangGraph memory (loads chat history)
+> - ✅ Uses gpt-4o-mini for cost-effective query enhancement (~$0.001/query)
 
 ---
 

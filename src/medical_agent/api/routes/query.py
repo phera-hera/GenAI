@@ -11,6 +11,8 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
+from langchain_core.messages import HumanMessage
+from langchain_openai import AzureChatOpenAI
 
 from medical_agent.agents import medical_rag_app
 from medical_agent.api.schemas import (
@@ -24,6 +26,124 @@ from medical_agent.core.config import settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["Query"])
+
+
+# ============================================================================
+# Query Generation and Rewriting Helpers
+# ============================================================================
+
+
+async def generate_initial_query(
+    ph_value: float,
+    health_profile: dict[str, Any],
+    symptoms: list[str]
+) -> str:
+    """
+    Generate initial search query from form data using LLM.
+
+    Converts structured health data into a natural language medical research query
+    optimized for retrieval.
+
+    Args:
+        ph_value: Vaginal pH reading
+        health_profile: User's health context (diagnoses, age, etc.)
+        symptoms: List of reported symptoms
+
+    Returns:
+        Generated search query string
+    """
+    llm = AzureChatOpenAI(
+        deployment_name=settings.azure_openai_mini_deployment_name,
+        api_key=settings.azure_openai_api_key,
+        azure_endpoint=settings.azure_openai_endpoint,
+        api_version=settings.azure_openai_api_version,
+        temperature=0.0,
+    )
+
+    # Build context string
+    diagnoses_str = ", ".join(health_profile.get("diagnoses", []))
+    symptoms_str = ", ".join(symptoms[:3]) if symptoms else "none reported"
+    age_str = f"{health_profile.get('age')} years old" if health_profile.get("age") else "adult"
+
+    prompt = f"""You are a medical research query generator. Create a focused, natural language search query for medical literature retrieval.
+
+Patient Context:
+- Vaginal pH: {ph_value}
+- Age: {age_str}
+- Diagnoses: {diagnoses_str if diagnoses_str else "none"}
+- Symptoms: {symptoms_str}
+
+Generate a 1-2 sentence medical research query that would retrieve relevant scientific literature about this presentation. Focus on the clinical significance and implications.
+
+Do NOT include phrases like "research about" or "studies on". Write it as a direct clinical question.
+
+Query:"""
+
+    response = await llm.ainvoke([HumanMessage(content=prompt)])
+    query = response.content.strip()
+
+    logger.info(f"Generated initial query: {query[:100]}...")
+    return query
+
+
+async def rewrite_followup_query(
+    user_message: str,
+    chat_history: list,
+    ph_value: float,
+    health_profile: dict[str, Any]
+) -> str:
+    """
+    Rewrite follow-up query with conversation history context.
+
+    Transforms context-dependent follow-up questions into standalone search queries
+    by incorporating relevant information from conversation history and user profile.
+
+    Args:
+        user_message: Current user question
+        chat_history: Previous conversation messages
+        ph_value: User's pH value
+        health_profile: User's health context
+
+    Returns:
+        Rewritten standalone search query
+    """
+    llm = AzureChatOpenAI(
+        deployment_name=settings.azure_openai_mini_deployment_name,
+        api_key=settings.azure_openai_api_key,
+        azure_endpoint=settings.azure_openai_endpoint,
+        api_version=settings.azure_openai_api_version,
+        temperature=0.0,
+    )
+
+    # Format conversation history (last 2 turns = 4 messages)
+    history_text = "\n".join([
+        f"{msg.type if hasattr(msg, 'type') else 'message'}: {str(msg.content if hasattr(msg, 'content') else msg)[:150]}"
+        for msg in chat_history[-4:]
+    ])
+
+    # Build profile context
+    diagnoses_str = ", ".join(health_profile.get("diagnoses", []))
+
+    prompt = f"""Given this conversation history and user profile, rewrite the current question as a clear, standalone medical research query.
+
+Conversation History:
+{history_text}
+
+User Profile:
+- pH: {ph_value}
+- Diagnoses: {diagnoses_str if diagnoses_str else "none"}
+
+Current Question: "{user_message}"
+
+Task: Rewrite this as a standalone search query for medical literature. Include relevant context from the conversation and profile ONLY if it helps clarify the question. If the question is already clear and complete, return it as-is.
+
+Rewritten Query:"""
+
+    response = await llm.ainvoke([HumanMessage(content=prompt)])
+    rewritten = response.content.strip()
+
+    logger.info(f"Rewritten query: '{user_message}' → '{rewritten[:100]}...'")
+    return rewritten
 
 
 @router.post(
@@ -136,17 +256,41 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
         session_id = request.session_id if request.session_id else str(uuid.uuid4())
         logger.info(f"Session ID: {session_id}")
 
-        # Build query message
+        # Generate or rewrite query based on interaction type
         if request.user_message:
-            # Follow-up question - use user's actual message
-            query_text = request.user_message
-            logger.info(f"Follow-up query: {query_text[:100]}...")
+            # FOLLOW-UP: Load conversation history and rewrite query
+            logger.info("Follow-up question detected - loading conversation history")
+
+            try:
+                # Load conversation state from LangGraph memory
+                state_snapshot = medical_rag_app.get_state(
+                    config={"configurable": {"thread_id": session_id}}
+                )
+                chat_history = state_snapshot.values.get("messages", [])
+
+                logger.info(f"Loaded {len(chat_history)} messages from conversation history")
+
+                # Rewrite query with conversation context
+                query_text = await rewrite_followup_query(
+                    user_message=request.user_message,
+                    chat_history=chat_history,
+                    ph_value=request.ph_value,
+                    health_profile=health_profile
+                )
+
+            except Exception as e:
+                logger.warning(f"Failed to load conversation history: {e}. Using raw query.")
+                query_text = request.user_message
+
         else:
-            # Initial request - auto-generate query from pH value
-            query_text = f"My vaginal pH is {request.ph_value}. What does this mean?"
-            if symptoms:
-                query_text += f" I'm experiencing: {', '.join(symptoms[:3])}."
-            logger.info(f"Initial query: {query_text[:100]}...")
+            # INITIAL: Generate query from form data using LLM
+            logger.info("Initial interaction - generating query from form data")
+
+            query_text = await generate_initial_query(
+                ph_value=request.ph_value,
+                health_profile=health_profile,
+                symptoms=symptoms
+            )
 
         # Prepare state for LangGraph
         initial_state = {
