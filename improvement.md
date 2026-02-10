@@ -1,7 +1,7 @@
 # Medical RAG Pipeline — Improvement Plan
 
-> **Status**: Phase 1 ✅ COMPLETED (Feb 9, 2026) | Phase 1.5 ✅ COMPLETED | Phase 2-5 pending
-> **Created**: February 2026
+> **Status**: Phase 1 ✅ COMPLETED (Feb 9, 2026) | Phase 1.5 ✅ COMPLETED | Phase 2 (MVP) 🚀 IN PROGRESS | Phase 3-5 pending
+> **Created**: February 2026 | **Updated**: Feb 10, 2026 (MVP streamline)
 > **Baseline RAGAS Scores (k=5)**: Faithfulness 0.7476 | Context Recall 0.6857 | Context Precision 0.6000 | Answer Relevancy 0.8372 | Factual Correctness 0.3200
 > **Target**: All metrics ≥ 0.85, Factual Correctness ≥ 0.70
 >
@@ -16,6 +16,13 @@
 > - ✅ Conversational query rewriting with history for follow-ups
 > - ✅ Integrated with LangGraph memory (loads chat history)
 > - ✅ Uses gpt-4o-mini for cost-effective query enhancement (~$0.001/query)
+>
+> **Phase 2 (MVP) Plan**:
+> - Increase chunk size 512 → 1024 tokens (better for 3072-dim embeddings)
+> - Structural chunk filtering (regex + length checks only)
+> - Table-to-natural-language transformation
+> - Contextual headers (document context prepended to chunks)
+> - **Deferred**: LLM quality scoring, semantic deduplication (measure first, add if needed)
 
 ---
 
@@ -382,21 +389,23 @@ chunker = HybridChunker(chunk_size=1024, chunk_overlap=128)  # Tuned for 3072-di
 
 ### 2.1 Heuristic Chunk Filter (Pre-Embedding)
 
-Add a filter after chunking but before embedding to discard low-quality chunks.
+Add a filter after chunking but before embedding to discard structural garbage.
+
+regex patterns + length check. Skip medical term validation (risk of false negatives).
 
 **New file**: `src/medical_agent/ingestion/chunk_filter.py`
 
 ```python
 """
-Heuristic chunk quality filter.
+Heuristic chunk quality filter (MVP).
 
-Removes chunks that waste embedding budget and retrieval slots:
+Removes chunks that are obviously garbage:
 - Bibliography/reference sections
 - Image/figure placeholders
-- Equation-only chunks
-- Dots-only or whitespace-heavy chunks
-- Headers/footers
-- Very short chunks with no medical content
+- Dots-only or whitespace-heavy noise
+- Headers/footers/page numbers
+- Very short chunks (< 15 words)
+- Very long chunks (> 300 words — likely rambling)
 """
 
 import re
@@ -405,7 +414,7 @@ from llama_index.core.schema import BaseNode
 
 logger = logging.getLogger(__name__)
 
-# Patterns for low-quality content
+# Patterns for structural garbage
 BIBLIOGRAPHY_PATTERNS = [
     r"^\s*\[\d+\]\s+[A-Z][a-z]+",           # [1] Author Name...
     r"^\s*\d+\.\s+[A-Z][a-z]+.*et al",       # 1. Author et al.
@@ -420,7 +429,6 @@ NOISE_PATTERNS = [
     r"^\s*\[?table\s*\d+\]?",                  # Table references (caption only)
     r"^[\s\.·•\-_=]{10,}$",                    # Dots, bullets, lines
     r"^\s*page\s+\d+\s*(of\s+\d+)?\s*$",      # Page numbers
-    r"^\s*\d+\s*$",                             # Standalone numbers
     r"^[^\w]*$",                                 # No word characters at all
 ]
 
@@ -429,7 +437,6 @@ HEADER_FOOTER_PATTERNS = [
     r"copyright\s+©?\s*\d{4}",                 # Copyright notices
     r"all\s+rights\s+reserved",                # Rights notices
     r"downloaded\s+from",                       # Download notices
-    r"accepted\s+\d{1,2}\s+\w+\s+\d{4}",     # Acceptance dates
 ]
 
 # Compiled patterns
@@ -438,33 +445,33 @@ _noise_re = [re.compile(p, re.IGNORECASE | re.MULTILINE) for p in NOISE_PATTERNS
 _header_re = [re.compile(p, re.IGNORECASE) for p in HEADER_FOOTER_PATTERNS]
 
 
-def is_low_quality_chunk(node: BaseNode, min_words: int = 15) -> bool:
+def is_low_quality_chunk(node: BaseNode, min_words: int = 15, max_words: int = 300) -> bool:
     """
-    Check if a chunk is low quality and should be filtered out.
+    Check if a chunk is structural garbage and should be filtered out.
 
     Args:
         node: The chunk node to evaluate
         min_words: Minimum word count threshold
+        max_words: Maximum word count threshold
 
     Returns:
-        True if chunk should be REMOVED (is low quality)
+        True if chunk should be REMOVED
     """
     text = node.get_content().strip()
 
-    # Empty or very short
-    if len(text) < 20 or len(text.split()) < min_words:
+    # Length check: too short or too long
+    word_count = len(text.split())
+    if word_count < min_words or word_count > max_words:
         return True
 
     # Check section type in metadata
-    section = (node.metadata.get("dl_doc_hash", "") or "").lower()
     chunk_type = (node.metadata.get("chunk_type", "") or "").lower()
-
     if chunk_type in ("references", "bibliography", "acknowledgements"):
         return True
 
     # Bibliography patterns
     bib_matches = sum(1 for p in _bib_re if p.search(text))
-    if bib_matches >= 2:  # Multiple bibliography indicators
+    if bib_matches >= 2:
         return True
 
     # Pure noise
@@ -473,10 +480,9 @@ def is_low_quality_chunk(node: BaseNode, min_words: int = 15) -> bool:
     if noise_lines / max(len(lines), 1) > 0.5:
         return True
 
-    # Header/footer content (short text matching header patterns)
-    if len(text.split()) < 30:
-        if any(p.search(text) for p in _header_re):
-            return True
+    # Header/footer content
+    if word_count < 30 and any(p.search(text) for p in _header_re):
+        return True
 
     # High ratio of non-alphabetic characters (equations, symbols)
     alpha_ratio = sum(c.isalpha() or c.isspace() for c in text) / max(len(text), 1)
@@ -488,97 +494,27 @@ def is_low_quality_chunk(node: BaseNode, min_words: int = 15) -> bool:
 
 def filter_chunks(nodes: list[BaseNode]) -> list[BaseNode]:
     """
-    Filter out low-quality chunks.
+    Filter out structural garbage chunks.
 
     Args:
         nodes: List of chunk nodes from parser
 
     Returns:
-        Filtered list with garbage chunks removed
+        Filtered list with obvious garbage removed
     """
     original_count = len(nodes)
     filtered = [n for n in nodes if not is_low_quality_chunk(n)]
     removed = original_count - len(filtered)
 
     if removed > 0:
-        logger.info(f"Chunk filter: {original_count} → {len(filtered)} (removed {removed} low-quality chunks)")
+        logger.info(f"Chunk filter: {original_count} → {len(filtered)} (removed {removed} chunks)")
 
     return filtered
 ```
 
-### 2.2 LLM-Based Chunk Quality Scoring
-
-For chunks that pass heuristic filters, use gpt-4o-mini to score medical informativeness (1-5 scale). Drop chunks scoring 1-2.
-
-**Why LLM**: Heuristic filters catch obvious garbage. LLM catches subtler issues: chunks that are technically "text" but contain no useful medical information (e.g., "The study was approved by the ethics committee and all participants provided informed consent.").
-
-**Add to `chunk_filter.py`**:
-
-```python
-from langchain_openai import AzureChatOpenAI
-from medical_agent.core.config import settings
-
-QUALITY_PROMPT = """Score this medical research text chunk on a scale of 1-5 for medical informativeness:
-
-1 = No medical information (admin text, acknowledgements, ethics statements, formatting artifacts)
-2 = Minimal medical info (generic methodology, sample demographics without findings)
-3 = Some medical info (general background, non-specific health claims)
-4 = Good medical info (specific findings, data points, clinical observations)
-5 = Excellent medical info (key findings, statistical results, clinical recommendations)
-
-Text: {text}
-
-Return ONLY the number (1-5):"""
-
-
-async def score_chunks_with_llm(
-    nodes: list[BaseNode],
-    min_score: int = 3,
-    batch_size: int = 10,
-) -> list[BaseNode]:
-    """
-    Score chunks using gpt-4o-mini and filter by quality.
-
-    Uses gpt-4o-mini for cost efficiency (~$0.15/1M input tokens).
-    Processes in batches to respect rate limits.
-
-    Args:
-        nodes: Chunks that passed heuristic filter
-        min_score: Minimum quality score to keep (1-5)
-        batch_size: Number of chunks per LLM call
-
-    Returns:
-        Chunks scoring >= min_score
-    """
-    llm = AzureChatOpenAI(
-        deployment_name=settings.azure_openai_mini_deployment_name,
-        api_key=settings.azure_openai_api_key,
-        azure_endpoint=settings.azure_openai_endpoint,
-        api_version=settings.azure_openai_api_version,
-        temperature=0.0,
-    )
-
-    scored_nodes = []
-
-    for node in nodes:
-        text = node.get_content()[:1000]  # Truncate for cost
-        try:
-            response = await llm.ainvoke(QUALITY_PROMPT.format(text=text))
-            score = int(response.content.strip())
-            if score >= min_score:
-                node.metadata["quality_score"] = score
-                scored_nodes.append(node)
-            else:
-                logger.debug(f"Dropping chunk (score={score}): {text[:80]}...")
-        except Exception as e:
-            logger.warning(f"LLM scoring failed, keeping chunk: {e}")
-            scored_nodes.append(node)  # Keep on error
-
-    logger.info(f"LLM scoring: {len(nodes)} → {len(scored_nodes)} chunks (min_score={min_score})")
-    return scored_nodes
-```
-
-**Cost estimate**: ~30 papers × ~50 chunks/paper × ~200 tokens/chunk = 300K tokens. At gpt-4o-mini rates (~$0.15/1M input), total cost ≈ $0.05.
+**Cost**: $0 (regex only)
+**Expected cleanup**: 40-50% of garbage removed
+**MVP decision**: Skip medical term filtering and LLM scoring for now. Measure results first.
 
 ### 2.3 Table-to-Natural-Language Conversion
 
@@ -766,105 +702,55 @@ async def add_contextual_headers(
 
 **Cost estimate**: ~30 papers × 50 chunks × ~300 tokens/call = 450K tokens ≈ $0.07 (gpt-4o-mini).
 
-### 2.5 Semantic Deduplication
+### 2.5 Update Ingestion Pipeline
 
-**Problem**: Multiple papers may cite the same foundational research, or Docling may create overlapping chunks from section boundaries. Near-duplicate chunks waste retrieval slots.
-
-**Add to pipeline** (post-embedding, using cosine similarity):
-
-```python
-"""Semantic deduplication using embedding cosine similarity."""
-
-import numpy as np
-from llama_index.core.schema import BaseNode
-
-def deduplicate_nodes(
-    nodes: list[BaseNode],
-    similarity_threshold: float = 0.95,
-) -> list[BaseNode]:
-    """
-    Remove near-duplicate chunks using cosine similarity.
-
-    Args:
-        nodes: Nodes with embeddings already computed
-        similarity_threshold: Cosine similarity above which chunks are duplicates
-
-    Returns:
-        Deduplicated node list (keeps first occurrence)
-    """
-    if len(nodes) <= 1:
-        return nodes
-
-    # Get embeddings
-    embeddings = [n.embedding for n in nodes if n.embedding]
-    if not embeddings:
-        return nodes
-
-    emb_matrix = np.array(embeddings)
-    # Normalize for cosine similarity
-    norms = np.linalg.norm(emb_matrix, axis=1, keepdims=True)
-    normalized = emb_matrix / (norms + 1e-10)
-
-    keep_indices = set(range(len(nodes)))
-
-    for i in range(len(normalized)):
-        if i not in keep_indices:
-            continue
-        for j in range(i + 1, len(normalized)):
-            if j not in keep_indices:
-                continue
-            sim = np.dot(normalized[i], normalized[j])
-            if sim >= similarity_threshold:
-                keep_indices.discard(j)  # Remove later duplicate
-
-    deduped = [nodes[i] for i in sorted(keep_indices)]
-    removed = len(nodes) - len(deduped)
-    if removed > 0:
-        logger.info(f"Deduplication: {len(nodes)} → {len(deduped)} (removed {removed} near-duplicates)")
-
-    return deduped
-```
-
-### 2.6 Update Ingestion Pipeline
-
-Integrate all Phase 2 components into `pipeline.py`:
+Integrate Phase 2 components into `pipeline.py`:
 
 **File**: `src/medical_agent/ingestion/pipeline.py`
 
-The pipeline flow becomes:
+The pipeline flow becomes (MVP):
 ```
-PDF → Docling Parse → DoclingNodeParser + HybridChunker
-    → Heuristic Filter (remove garbage)
-    → Table-to-NL Transform (convert tables)
-    → Contextual Headers (add document context)
-    → LLM Quality Scoring (drop score < 3)
+PDF → Docling Parse → DoclingNodeParser + HybridChunker(1024 tokens)
+    → Heuristic Filter (remove structural garbage)
+    → Table-to-NL Transform (convert tables to natural language)
+    → Contextual Headers (add document context to chunks)
     → Metadata Extraction
     → Embedding Generation
-    → Semantic Deduplication
     → Store in pgvector
 ```
 
-Key change in `process_paper()`: After `self.pipeline.arun()`, add the new steps. Or better, create a custom `IngestionPipeline` subclass that includes the filters.
+Key changes:
+1. Increase `chunk_size` from 512 → 1024 in HybridChunker
+2. Apply `filter_chunks()` from `chunk_filter.py` after chunking
+3. Apply `transform_table_chunks()` from `table_transformer.py` before embedding
+4. Apply `add_contextual_headers()` from `contextual_chunking.py` before embedding
 
-### 2.7 Re-Ingest All Papers
+**Future additions** (if evaluation shows plateau):
+- 2.3 LLM-based chunk quality scoring
+- 2.4 Semantic deduplication (post-embedding)
+
+### 2.6 Re-Ingest All Papers
 
 After pipeline changes:
-1. Clear existing chunks: `TRUNCATE data_paper_chunks;`
-2. Reset paper processing status: `UPDATE papers SET is_processed = false, processed_at = null;`
-3. Re-run ingestion for all papers
-4. Run evaluation to measure improvement
+1. Backup database (safety first)
+2. Clear existing chunks: `TRUNCATE data_paper_chunks;`
+3. Reset paper processing status: `UPDATE papers SET is_processed = false, processed_at = null;`
+4. Re-run ingestion for all papers
+5. Verify chunks in pgvector are cleaner (spot-check 5-10 random chunks)
 
-### 2.8 Run Evaluation After Phase 2
+### 2.7 Run Evaluation After Phase 2
 
 ```bash
 python -m medical_agent.evaluation.run_evaluation --testset evaluation/testsets/golden_v1.csv
 python -m medical_agent.evaluation.compare_results results/eval_baseline.json results/eval_phase2.json
 ```
 
-**Expected improvements**:
-- Context Recall: 0.69 → 0.80+ (contextual headers help retriever find relevant content)
-- Faithfulness: 0.75 → 0.85+ (less noise, better chunks)
-- Factual Correctness: 0.32 → 0.50+ (table-to-NL makes data searchable)
+**Expected improvements** (MVP scope):
+- Context Recall: 0.69 → 0.75+ (contextual headers help find relevant content)
+- Faithfulness: 0.75 → 0.82+ (cleaner chunks, less noise)
+- Factual Correctness: 0.32 → 0.40+ (table-to-NL makes data searchable)
+
+
 
 ---
 
@@ -1282,13 +1168,14 @@ After each phase, add questions that specifically test the changes:
 ## 8. Implementation Timeline
 
 ```
-Week 1:  Phase 0 (golden test set + baseline) + Phase 1 (quick wins)
-Week 2:  Phase 2 (chunk quality + re-ingestion)
+Week 1:  Phase 0 (golden test set + baseline) + Phase 1 (quick wins) ✅
+Week 2:  Phase 2 MVP (chunk cleaning + re-ingestion) — measure results first
+         If scores plateau: add 2.5 (LLM scoring) + 2.6 (dedup)
 Week 3:  Phase 3 (advanced retrieval + agentic graph)
 Week 4:  Phase 4 (generation quality) + Phase 5 (monitoring)
 ```
 
-Each phase ends with an evaluation run. If scores don't improve, debug before moving on.
+**MVP philosophy**: Measure after each phase. Only add complexity (LLM calls, dedup) if simpler approaches plateau.
 
 ---
 
@@ -1308,13 +1195,13 @@ Each phase ends with an evaluation run. If scores don't improve, debug before mo
 | `agents/reranker.py` | CREATE |
 | `agents/llamaindex_retrieval.py` | EDIT (cache retriever, add alpha=0.3) |
 
-### Phase 2
+### Phase 2 (MVP)
 | File | Action |
 |------|--------|
-| `ingestion/chunk_filter.py` | CREATE |
-| `ingestion/table_transformer.py` | CREATE |
-| `ingestion/contextual_chunking.py` | CREATE |
-| `ingestion/pipeline.py` | EDIT (integrate new stages) |
+| `ingestion/pipeline.py` | EDIT (increase chunk_size to 1024) |
+| `ingestion/chunk_filter.py` | CREATE (structural filtering only) |
+| `ingestion/table_transformer.py` | CREATE (table-to-NL) |
+| `ingestion/contextual_chunking.py` | CREATE (contextual headers) |
 
 ### Phase 3
 | File | Action |

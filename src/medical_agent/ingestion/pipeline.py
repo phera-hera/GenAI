@@ -1,16 +1,17 @@
 """
-LlamaIndex-Based Ingestion Pipeline
+LlamaIndex-Based Ingestion Pipeline (Phase 2: Enhanced Data Quality)
 
-Modern ingestion pipeline using LlamaIndex components to:
+Modern ingestion pipeline using LlamaIndex components + custom quality filters:
 1. Parse PDFs with DoclingReader (JSON export for structured tables AND sections)
-2. Chunk with DoclingNodeParser + HybridChunker (section-aware + token-limited)
-3. Extract medical metadata (8 fields)
-4. Generate embeddings (Azure OpenAI)
-5. Store in pgvector
+2. Chunk with DoclingNodeParser + HybridChunker (section-aware + token-limited, 1024 tokens)
+3. **Filter chunks** (remove bibliography, headers, noise - removes 40-60% garbage)
+4. **Transform tables** (table-to-natural-language with gpt-4o)
+5. **Add contextual headers** (Anthropic's approach - 49% error reduction)
+6. Extract medical metadata (8 fields)
+7. Generate embeddings (Azure OpenAI 3072-dim)
+8. Store in pgvector
 
-HybridChunker combines hierarchical structure (sections, paragraphs, tables) with
-token awareness (max 512 tokens per chunk) to prevent embedding truncation while
-preserving document structure.
+Phase 2 improvements target data quality at ingestion time to improve retrieval precision.
 """
 
 import hashlib
@@ -37,6 +38,9 @@ from medical_agent.core.exceptions import DatabaseException
 from medical_agent.infrastructure.database.models import Paper, PaperChunk
 from medical_agent.infrastructure.database.session import get_session_context
 from medical_agent.ingestion.metadata import create_medical_metadata_extractor
+from medical_agent.ingestion.chunk_filter import filter_chunks
+from medical_agent.ingestion.table_transformer import transform_table_chunks
+from medical_agent.ingestion.contextual_chunking import add_contextual_headers
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +58,7 @@ class PipelineConfig:
     extract_metadata: bool = True
 
     # Chunking settings for HybridChunker
-    max_chunk_tokens: int = 512   # Maximum tokens per chunk (prevents embedding truncation)
+    max_chunk_tokens: int = 1024  # Maximum tokens per chunk (optimized for 3072-dim embeddings)
     min_chunk_tokens: int = 64    # Minimum tokens per chunk (avoids tiny chunks)
     merge_small_chunks: bool = True  # Merge small adjacent chunks
 
@@ -115,14 +119,19 @@ class PipelineResult:
 
 class MedicalIngestionPipeline:
     """
-    LlamaIndex-based ingestion pipeline for medical papers.
+    LlamaIndex-based ingestion pipeline for medical papers (Phase 2: Enhanced).
 
     Pipeline stages:
     1. Parse PDF with DoclingReader (JSON export for structured tables)
-    2. Chunk with DoclingNodeParser (section-aware)
-    3. Extract medical metadata (8 fields)
-    4. Generate embeddings (Azure OpenAI)
-    5. Store in pgvector (native PGVectorStore with hybrid_search=True)
+    2. Chunk with DoclingNodeParser + HybridChunker (1024 tokens, section-aware)
+    3. **Filter chunks** (remove structural garbage: bibliography, headers, noise)
+    4. **Transform tables** (convert to natural language with gpt-4o)
+    5. **Add contextual headers** (Anthropic's approach for self-contained chunks)
+    6. Extract medical metadata (8 fields)
+    7. Generate embeddings (Azure OpenAI 3072-dim)
+    8. Store in pgvector (native PGVectorStore with hybrid_search=True)
+
+    Phase 2 improvements target data quality at ingestion to improve retrieval metrics.
 
     Args:
         config: Pipeline configuration
@@ -187,7 +196,7 @@ class MedicalIngestionPipeline:
         # Initialize HybridChunker for token-aware section chunking
         # Use default tokenizer (HybridChunker has its own tokenizer handling)
         hybrid_chunker = HybridChunker(
-            max_tokens=self.config.max_chunk_tokens,  # Prevent embedding truncation
+            max_tokens=self.config.max_chunk_tokens,  # 1024 tokens: optimized for 3072-dim embeddings
             min_tokens=self.config.min_chunk_tokens,  # Avoid tiny chunks
             merge_peers=self.config.merge_small_chunks,  # Merge small adjacent chunks
             heading_as_metadata=True,  # Preserve section hierarchy
@@ -197,16 +206,11 @@ class MedicalIngestionPipeline:
         # Splits Docling JSON by structure + enforces token limits
         self.node_parser = DoclingNodeParser(chunker=hybrid_chunker)
 
-        # Build ingestion pipeline
-        self.pipeline = IngestionPipeline(
-            transformations=[
-                self.node_parser,  # Chunk documents into nodes
-                self.metadata_extractor,  # Medical metadata extraction
-                self.embedding_model,  # Embedding generation
-            ],
-        )
+        # Note: Pipeline runs custom processing steps (filter, transform, context)
+        # before metadata extraction and embedding. See process_paper() for flow.
 
-        logger.info("Initialized LlamaIndex ingestion pipeline")
+        logger.info("Initialized LlamaIndex ingestion pipeline (Phase 2: Enhanced)")
+        logger.info("Pipeline flow: Chunk(1024) → Filter → Table-to-NL → Context → Metadata → Embed")
 
     def compute_file_hash(self, content: bytes) -> str:
         """Compute SHA-256 hash of file content for deduplication."""
@@ -298,20 +302,49 @@ class MedicalIngestionPipeline:
             finally:
                 result.parse_time_ms = int((time.monotonic() - parse_start) * 1000)
 
-            # Stage 2-4: Run ingestion pipeline (chunk, extract metadata, embed)
+            # Stage 2: Chunk documents
             pipeline_start = time.monotonic()
             try:
-                # Run the complete pipeline
-                logger.info(f"Starting pipeline (chunk + embed) for paper {result.paper_id}")
-                nodes = await self.pipeline.arun(documents=[document])
-                logger.info(f"Pipeline completed: generated {len(nodes)} nodes")
+                logger.info(f"Starting pipeline (chunk + filter + transform + embed) for paper {result.paper_id}")
+
+                # Step 2.1: Chunk with DoclingNodeParser
+                logger.info("Step 1/5: Chunking document...")
+                nodes = self.node_parser.get_nodes_from_documents([document])
+                logger.info(f"✓ Chunked: {len(nodes)} raw chunks")
                 result.chunked = True
+
+                # Step 2.2: Filter out structural garbage
+                logger.info("Step 2/5: Filtering structural noise...")
+                nodes = filter_chunks(nodes)
+                logger.info(f"✓ Filtered: {len(nodes)} chunks after filter")
+
+                # Step 2.3: Transform tables to natural language
+                logger.info("Step 3/5: Transforming tables to natural language...")
+                nodes = await transform_table_chunks(nodes)
+                logger.info(f"✓ Tables transformed: {len(nodes)} chunks")
+
+                # Step 2.4: Add contextual headers (Anthropic's approach)
+                logger.info("Step 4/5: Adding contextual headers...")
+                full_document_text = document.get_content()
+                nodes = await add_contextual_headers(nodes, full_document_text)
+                logger.info(f"✓ Context added: {len(nodes)} chunks")
+
+                # Step 2.5: Extract metadata and embed
+                logger.info("Step 5/5: Extracting metadata and generating embeddings...")
+                # Run metadata extraction + embedding through sub-pipeline
+                sub_pipeline = IngestionPipeline(
+                    transformations=[
+                        self.metadata_extractor,  # Medical metadata extraction
+                        self.embedding_model,     # Embedding generation
+                    ],
+                )
+                nodes = await sub_pipeline.arun(nodes=nodes)
+                logger.info(f"✓ Pipeline completed: {len(nodes)} embedded nodes")
+
                 result.embedded = True
                 result.node_count = len(nodes)
                 result.chunk_count = len(nodes)
                 result.embedded_count = len(nodes)
-
-                logger.info(f"Pipeline generated {len(nodes)} nodes for paper {result.paper_id}")
 
             except Exception as e:
                 logger.error(f"Pipeline execution failed: {e}", exc_info=True)
