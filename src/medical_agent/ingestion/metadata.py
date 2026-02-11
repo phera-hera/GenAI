@@ -3,8 +3,8 @@ import logging
 from typing import Any, Sequence
 
 from llama_index.core.bridge.pydantic import BaseModel, Field
-from llama_index.core.extractors import BaseExtractor, PydanticProgramExtractor
-from llama_index.core.llms import ChatMessage, LLM, MessageRole
+from llama_index.core.extractors import BaseExtractor
+from llama_index.core.llms import LLM
 from llama_index.core.prompts import ChatPromptTemplate
 from llama_index.core.schema import BaseNode
 from llama_index.llms.azure_openai import AzureOpenAI
@@ -107,26 +107,6 @@ class MedicalMetadata(BaseModel):
         description="Confidence score for extraction quality (0.0-1.0). Higher is better."
     )
 
-    title: str | None = Field(
-        default=None,
-        description="Paper title if found in document (e.g., title page, header, or metadata)."
-    )
-
-    publication_year: int | None = Field(
-        default=None,
-        description="Publication year if found in document (e.g., '2017', '2023'). Extract as integer year only."
-    )
-
-    author: str | None = Field(
-        default=None,
-        description="Primary author(s) if found (e.g., 'Smith et al.' or 'Smith, J. and Jones, M.'). First author is sufficient."
-    )
-
-    doi: str | None = Field(
-        default=None,
-        description="Digital Object Identifier if found (e.g., '10.1234/example' or full URL). Extract identifier only."
-    )
-
 
 # Extraction prompt that emphasizes standardized terms
 EXTRACTION_PROMPT = """You are extracting metadata from research papers for a women's health application.
@@ -135,12 +115,6 @@ CRITICAL RULES:
 1. ONLY extract information that is EXPLICITLY MENTIONED in the text
 2. DO NOT infer, extrapolate, or hallucinate
 3. Use EXACT standardized terms from field descriptions
-
-PAPER METADATA (extract if found):
-- title: Paper title from title page or header
-- publication_year: Year as integer (e.g., 2017, 2023)
-- author: Primary author(s), first author sufficient (e.g., "Smith et al.")
-- doi: Digital Object Identifier only, no URL (e.g., "10.1234/example")
 
 MEDICAL METADATA (standardized terms only):
 - ethnicities: African/Black, Asian, Caucasian, Hispanic/Latina, Middle Eastern, Mixed, Native American/Indigenous, North African, Pacific Islander, South Asian, Southeast Asian
@@ -289,10 +263,6 @@ class SimplifiedMedicalMetadataExtractor(BaseExtractor):
     def _empty_metadata(self) -> dict[str, Any]:
         """Return empty metadata structure."""
         return {
-            "title": None,
-            "publication_year": None,
-            "author": None,
-            "doi": None,
             "ethnicities": [],
             "diagnoses": [],
             "symptoms": [],
@@ -349,10 +319,6 @@ def dict_to_medical_metadata(data: dict[str, Any]) -> dict[str, Any]:
     # Validate and clean
     return {
         "extracted_metadata": {
-            "title": data.get("title"),
-            "publication_year": data.get("publication_year"),
-            "author": data.get("author"),
-            "doi": data.get("doi"),
             "ethnicities": data.get("ethnicities", []),
             "diagnoses": data.get("diagnoses", []),
             "symptoms": data.get("symptoms", []),

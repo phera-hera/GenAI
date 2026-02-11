@@ -24,7 +24,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from docling.chunking import HybridChunker
-from llama_index.core.ingestion import IngestionPipeline
 from llama_index.core.schema import Document
 from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
 from llama_index.node_parser.docling import DoclingNodeParser
@@ -329,16 +328,17 @@ class MedicalIngestionPipeline:
                 nodes = await add_contextual_headers(nodes, full_document_text)
                 logger.info(f"✓ Context added: {len(nodes)} chunks")
 
-                # Step 2.5: Extract metadata and embed
+                # Step 2.5: Extract metadata and embed (direct execution)
                 logger.info("Step 5/5: Extracting metadata and generating embeddings...")
-                # Run metadata extraction + embedding through sub-pipeline
-                sub_pipeline = IngestionPipeline(
-                    transformations=[
-                        self.metadata_extractor,  # Medical metadata extraction
-                        self.embedding_model,     # Embedding generation
-                    ],
-                )
-                nodes = await sub_pipeline.arun(nodes=nodes)
+
+                # Extract medical metadata from nodes
+                logger.info("  - Extracting medical metadata...")
+                nodes = await self.metadata_extractor.acall(nodes)
+                logger.info(f"  ✓ Metadata extracted")
+
+                # Generate embeddings
+                logger.info("  - Generating embeddings...")
+                nodes = await self.embedding_model.acall(nodes)
                 logger.info(f"✓ Pipeline completed: {len(nodes)} embedded nodes")
 
                 result.embedded = True
@@ -360,12 +360,7 @@ class MedicalIngestionPipeline:
             # Stage 5: Store in database
             store_start = time.monotonic()
             try:
-                # Extract metadata from first node (contains LLM-extracted metadata)
-                extracted_metadata = {}
-                if nodes and nodes[0].metadata:
-                    extracted_metadata = nodes[0].metadata
-
-                # Create paper record
+                # Create paper record (title comes from Docling via document.metadata)
                 logger.info(f"Creating paper record for {result.paper_id}")
                 paper = await self._insert_paper(
                     session=session,
@@ -373,7 +368,6 @@ class MedicalIngestionPipeline:
                     document=document,
                     gcp_path=gcp_path,
                     file_hash=file_hash,
-                    extracted_metadata=extracted_metadata,
                 )
                 result.paper_id = paper.id
                 result.paper_title = paper.title
@@ -419,40 +413,24 @@ class MedicalIngestionPipeline:
         document: Document,
         gcp_path: str,
         file_hash: str,
-        extracted_metadata: dict | None = None,
     ) -> Paper:
         """Create a new paper record."""
-        # Extract metadata from document
+        # Extract metadata from document (Docling provides title directly)
         metadata = document.metadata or {}
 
-        # Use extracted metadata from LLM if available, otherwise fall back to document metadata
-        extracted = extracted_metadata or {}
-
-        # Get title: prefer extracted title, fall back to document title or GCP path
-        title = extracted.get("title") or metadata.get("title")
+        # Title from Docling, fallback to filename
+        title = metadata.get("title")
         if not title:
-            # Extract from GCP path (filename without extension)
             title = Path(gcp_path).stem
 
-        # Get other fields from extracted metadata
-        authors = extracted.get("author")  # From LLM extraction
-        publication_year = extracted.get("publication_year")  # From LLM extraction
-        doi = extracted.get("doi")  # From LLM extraction
-
-        # Abstract stays as is (not extracted yet)
         abstract = metadata.get("abstract")
-
-        # Journal stays as is (not extracted yet)
         journal = metadata.get("journal")
 
         # Always create new (no update logic)
         paper = Paper(
             id=paper_id,
             title=title or "Untitled",
-            authors=authors,
             journal=journal,
-            publication_year=publication_year,
-            doi=doi,
             abstract=abstract,
             gcp_path=gcp_path,
             file_hash=file_hash,
