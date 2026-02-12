@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from medical_agent.core.config import settings
 from medical_agent.infrastructure.database.models import Paper
 from medical_agent.infrastructure.database.session import get_session_context
-from medical_agent.ingestion.metadata import create_medical_metadata_extractor
+from medical_agent.ingestion.metadata import extract_medical_metadata, stamp_metadata_on_nodes
 from medical_agent.ingestion.chunk_filter import filter_chunks
 from medical_agent.ingestion.table_transformer import transform_table_chunks
 from medical_agent.ingestion.contextual_chunking import add_contextual_headers
@@ -187,9 +187,6 @@ class MedicalIngestionPipeline:
             dimensions=self.config.embedding_dimensions,
         )
 
-        # Initialize metadata extractor (chunk-level, production pattern)
-        self.metadata_extractor = create_medical_metadata_extractor()
-
         # Initialize HybridChunker for token-aware section chunking
         # Use default tokenizer (HybridChunker has its own tokenizer handling)
         hybrid_chunker = HybridChunker(
@@ -207,7 +204,7 @@ class MedicalIngestionPipeline:
         # before metadata extraction and embedding. See process_paper() for flow.
 
         logger.info("Initialized LlamaIndex ingestion pipeline (Phase 2: Enhanced)")
-        logger.info("Pipeline flow: Parse → Chunk(1024) → Filter → Table-to-NL → Context → Metadata(chunk-level) → Embed")
+        logger.info("Pipeline flow: Parse → Chunk(1024) → Metadata(doc-level) → Filter → Table-to-NL → Context → Stamp → Embed")
 
     def compute_file_hash(self, content: bytes) -> str:
         """Compute SHA-256 hash of file content for deduplication."""
@@ -310,34 +307,42 @@ class MedicalIngestionPipeline:
                 logger.info(f"✓ Chunked: {len(nodes)} raw chunks")
                 result.chunked = True
 
-                # Step 2.2: Add paper_id to chunks BEFORE filtering (needed for metadata extraction)
+                # Step 2.2: Add paper_id to chunks
                 for node in nodes:
                     if node.metadata is None:
                         node.metadata = {}
                     node.metadata["paper_id"] = str(result.paper_id)
 
-                # Step 2.3: Filter out structural garbage
-                logger.info("Step 2/6: Filtering structural noise...")
+                # Step 2.3: Extract metadata from RAW chunks (before filtering)
+                # Uses title + abstract/intro for unique per-paper metadata
+                logger.info("Step 2/7: Extracting medical metadata from document...")
+                medical_metadata = await extract_medical_metadata(
+                    title=result.paper_title, nodes=nodes
+                )
+                logger.info(f"✓ Metadata extracted (confidence: {medical_metadata.get('confidence', 0.0):.2f})")
+
+                # Step 2.4: Filter out structural garbage
+                logger.info("Step 3/7: Filtering structural noise...")
                 nodes = filter_chunks(nodes)
                 logger.info(f"✓ Filtered: {len(nodes)} chunks after filter")
 
-                # Step 2.4: Transform tables to natural language
-                logger.info("Step 3/6: Transforming tables to natural language...")
+                # Step 2.5: Transform tables to natural language
+                logger.info("Step 4/7: Transforming tables to natural language...")
                 nodes = await transform_table_chunks(nodes)
                 logger.info(f"✓ Tables transformed: {len(nodes)} chunks")
 
-                # Step 2.5: Add contextual headers (Anthropic's approach)
-                logger.info("Step 4/6: Adding contextual headers...")
+                # Step 2.6: Add contextual headers (Anthropic's approach)
+                logger.info("Step 5/7: Adding contextual headers...")
                 nodes = await add_contextual_headers(nodes, title=result.paper_title)
                 logger.info(f"✓ Context added: {len(nodes)} chunks")
 
-                # Step 2.6: Extract medical metadata from chunks (production pattern)
-                logger.info("Step 5/6: Extracting medical metadata from chunks...")
-                nodes = await self.metadata_extractor.acall(nodes)
-                logger.info(f"✓ Metadata extracted and stamped on chunks")
+                # Step 2.7: Stamp metadata on processed chunks
+                logger.info("Step 6/7: Stamping metadata on chunks...")
+                nodes = stamp_metadata_on_nodes(nodes, medical_metadata)
+                logger.info(f"✓ Metadata stamped on {len(nodes)} chunks")
 
-                # Step 2.7: Generate embeddings
-                logger.info("Step 6/6: Generating embeddings...")
+                # Step 2.8: Generate embeddings
+                logger.info("Step 7/7: Generating embeddings...")
                 nodes = await self.embedding_model.acall(nodes)
                 logger.info(f"✓ Pipeline completed: {len(nodes)} embedded nodes")
 

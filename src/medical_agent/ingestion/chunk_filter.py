@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # Sections to drop (matched against Docling headings)
 EXCLUDED_SECTIONS = {
-    "references", "bibliography", "acknowledgements", "acknowledgments",
+    "reference", "references", "bibliography", "acknowledgements", "acknowledgments",
     "appendix", "supplementary", "supplemental", "conflict of interest",
     "funding", "author contributions", "abbreviations",
 }

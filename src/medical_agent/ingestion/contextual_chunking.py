@@ -18,23 +18,30 @@ from medical_agent.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-CONTEXT_PROMPT = """<document_outline>
+CONTEXT_PROMPT = """You are generating retrieval-optimized context for a women's health medical RAG system. This context is prepended to each chunk and used for both semantic (embedding) and keyword (BM25) search. Your goal: help this chunk match user questions about diagnoses, symptoms, treatments, and clinical findings.
+
+<document_outline>
 {doc_outline}
 </document_outline>
 
-Here is the chunk we want to situate within the whole document:
 <chunk>
 {chunk_text}
 </chunk>
 
-Please give a short succinct context (2-3 sentences) to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk.
+Write 2-3 sentences (50-100 tokens) that maximize retrieval. The context will be prepended to the chunk before embedding and indexing.
 
-The context should:
-1. Identify the study/paper by title
-2. State what section and topic the chunk covers
-3. Include key medical terms or conditions relevant to the chunk
+REQUIREMENTS:
+1. Open with: paper title + section (e.g., "From [Title]: In the Methods/Results section on...")
+2. State what question this chunk helps answer (query-mirroring): e.g., "This chunk explains treatment efficacy for endometriosis" or "diagnostic methods for bacterial vaginosis"
+3. Include exact medical terms users search for—use these canonical terms where relevant:
+   - Diagnoses: bacterial vaginosis (BV), yeast infection, endometriosis, PCOS, pelvic inflammatory disease, fibroids, etc.
+   - Symptoms: vaginal pH, discharge, odor, pelvic pain, etc.
+   - Treatments: hormone therapy, HRT, antibiotics, etc.
+   - Populations: premenopausal, menopausal, pregnant, age range
+4. Front-load the most searchable terms in the first sentence
+5. Be specific and factual—avoid generic phrases like "discusses various topics"
 
-Answer only with the succinct context and nothing else."""
+Output only the context. No preamble, explanations, or markdown."""
 
 
 def _build_document_outline(

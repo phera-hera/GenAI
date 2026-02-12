@@ -1,4 +1,5 @@
 """
+4
 Convert table chunks to natural language for better embedding search.
 
 Tables like "Treatment | Cure Rate | p-value" are hard to match via
@@ -13,20 +14,23 @@ from medical_agent.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-TABLE_PROMPT = """Convert this research table data into clear, factual natural language sentences.
-
-**Instructions:**
-1. Write 2-5 standalone factual sentences that capture the key data points
-2. Each sentence should be searchable and answer potential research questions
-3. Preserve ALL numbers, percentages, p-values, and statistical data EXACTLY as shown
-4. Include context (what the table is about) in each sentence
-5. Use proper medical terminology
-6. Make data relationships explicit (e.g., "compared to", "higher than", "associated with")
+TABLE_PROMPT = """Convert this medical research table into natural language optimized for RAG retrieval. The output replaces the table text and is used for both semantic (embedding) and keyword (BM25) search. Users ask questions like "What was the sensitivity of BV diagnosis?" or "treatment efficacy for endometriosis"—your sentences should match those query patterns.
 
 **Table data:**
 {table_text}
 
-**Natural language summary:**"""
+REQUIREMENTS:
+1. Write 2-5 standalone factual sentences. Each sentence must be independently searchable—a user query could match any single sentence.
+2. Phrase as direct answers to research questions, not meta-descriptions:
+   - GOOD: "Metronidazole achieved 85% cure rate for bacterial vaginosis compared to 72% for placebo (p<0.05)."
+   - BAD: "The table shows cure rates for different treatments."
+3. Preserve ALL numbers, percentages, p-values, confidence intervals, and statistics EXACTLY as in the table. Do not round or approximate.
+4. Include the condition/treatment/diagnosis in every sentence—use canonical medical terms: bacterial vaginosis (BV), yeast infection, endometriosis, PCOS, sensitivity, specificity, etc.
+5. Make comparisons explicit: "higher than", "compared to", "associated with", "versus"
+6. Front-load the most searchable terms (condition, outcome, key metric) in each sentence
+7. Use proper medical terminology consistent with the paper's domain
+
+Output only the natural language sentences. No preamble, bullets, or "Summary:" prefix."""
 
 
 def _is_table_chunk(node: BaseNode) -> bool:

@@ -1,6 +1,6 @@
 """Medical paper ingestion pipeline."""
 
-from .metadata import MedicalMetadata, create_medical_metadata_extractor
+from .metadata import MedicalMetadata, extract_medical_metadata, stamp_metadata_on_nodes
 from .pipeline import (
     MedicalIngestionPipeline,
     PipelineConfig,
@@ -14,5 +14,6 @@ __all__ = [
     "PipelineResult",
     "process_pdf_llamaindex",
     "MedicalMetadata",
-    "create_medical_metadata_extractor",
+    "extract_medical_metadata",
+    "stamp_metadata_on_nodes",
 ]

@@ -1,17 +1,22 @@
 """
-Chunk-level medical metadata extraction (production approach).
+Document-level medical metadata extraction.
 
-Extracts metadata from chunks after chunking. Uses paper_id as cache key
-to ensure each paper gets unique metadata extraction.
+Extracts metadata from the paper's title + abstract (not from individual chunks),
+then stamps the result onto all chunks. This ensures each paper gets unique,
+accurate metadata based on its actual content rather than similar chunk samples.
 
-Industry standard: Extract metadata during/after chunking phase, not before.
+Key design:
+- Extract from title + abstract (highest signal, most unique per paper)
+- Fallback chain: abstract → introduction → first 3 chunks
+- Light text cleaning for Docling unicode artifacts
+- No cache needed (one extraction per paper from unique document text)
 """
 
 import logging
+import re
 from typing import Any, Sequence
 
 from llama_index.core.bridge.pydantic import BaseModel, Field
-from llama_index.core.extractors import BaseExtractor
 from llama_index.core.llms import LLM
 from llama_index.core.prompts import ChatPromptTemplate
 from llama_index.core.schema import BaseNode
@@ -111,192 +116,269 @@ class MedicalMetadata(BaseModel):
     )
 
 
-EXTRACTION_PROMPT = """You are extracting metadata from research papers for a women's health application.
+EXTRACTION_PROMPT = """You are a medical metadata extractor for a women's health RAG system. Your output is stamped onto all chunks of each paper and used for filtering (e.g., "show me papers about PCOS" or "bacterial vaginosis treatment"). Accuracy is critical—wrong metadata causes failed filters and poor retrieval.
 
-CRITICAL RULES:
-1. ONLY extract information that is EXPLICITLY MENTIONED in the text
-2. DO NOT infer, extrapolate, or hallucinate
-3. Use EXACT standardized terms from field descriptions
+**Paper title:** {title}
 
-MEDICAL METADATA (standardized terms only):
+Use the paper title as your primary guide: it often states the main condition(s) studied. Cross-check with the text below.
+
+TASK:
+Extract ONLY information that is EXPLICITLY stated in the text. Output structured metadata for filtering.
+
+STRICT RULES (violations cause bad retrieval):
+1. EXTRACT ONLY if the term or concept is directly mentioned—no inference, extrapolation, or assumption
+2. If the paper mentions "vaginal pH in BV patients", extract "Bacterial vaginosis" and "vaginal pH"—the text explicitly references both
+3. DO NOT extract based on: related conditions, implications, or "papers about X typically also discuss Y"
+4. DO NOT extract ethnicity from study location alone (e.g., "study in Japan" ≠ Asian)
+5. Use EXACT standardized terms from the lists below—no synonyms or paraphrases in output
+
+VOCABULARY (use these exact strings):
 - ethnicities: African/Black, Asian, Caucasian, Hispanic/Latina, Middle Eastern, Mixed, Native American/Indigenous, North African, Pacific Islander, South Asian, Southeast Asian
-- diagnoses: Adenomyosis, Endometriosis, Bacterial vaginosis, Yeast infection, STI, PCOS, Premature ovarian insufficiency, Thyroid disorder, Fibroids, Ovarian cysts, Pelvic inflammatory disease
-- symptoms: Discharge colors (Creamy, Clear, Yellow, Green, Gray, Pink, Brown), Vaginal Odor, Itchy, Burning, Pelvic Pain, Swelling, Redness, Vaginal Dryness, Frequent Urination, Painful Urination
+- diagnoses: Adenomyosis, Endometriosis, Bacterial vaginosis, Yeast infection, Sexually transmitted infection, Polycystic ovary syndrome (PCOS), Premature ovarian insufficiency, Thyroid disorder, Fibroids (uterine myomas), Ovarian cysts, Pelvic inflammatory disease
+- symptoms: Creamy, Clear, Yellow, Green, Gray, Pink, Brown, Vaginal Odor, Itchy, Burning, Pelvic Pain, Swelling, Redness, Vaginal Dryness, Frequent Urination, Painful Urination
 - birth_control: Pill, IUD, Implant, Patch, Ring, Injection, Condom, Diaphragm, Sterilization
 - hormone_therapy: HRT, Testosterone, Progesterone, Estrogen, Thyroid Medication
 - fertility_treatments: IVF, IUI, Clomiphene, Letrozole, Gonadotropins, Ovulation Induction
 - menstrual_status: Premenstrual, Menstrual, Postmenstrual, Ovulation, Luteal Phase, Follicular Phase
-- age_range: Age/range if mentioned (e.g., "25-35", "18-45")
+- age_range: e.g. "25-35", "18-45" (only if explicitly stated)
 
-MAPPING:
-- "PCOS" → "Polycystic ovary syndrome (PCOS)"
-- "candida" → "Yeast infection"
-- "birth control pill" → "Pill"
+CANONICAL MAPPINGS (map variants to standard terms):
+- candida, candidal, C. albicans → Yeast infection
+- BV, bacterial vaginosis → Bacterial vaginosis
+- birth control pill, oral contraceptive, OCP → Pill
+- hormone replacement therapy, HRT, estrogen therapy → HRT
+- STI, STD, sexually transmitted → Sexually transmitted infection
 
 OUTPUT:
-- Return empty arrays for categories with no mentions
-- Confidence: 0.0-1.0 based on clarity (higher = clearer)
-- Focus on abstract, introduction, methods, and results sections
+- Empty list [] for any category with no explicit mention
+- confidence: 0.0-1.0 — 0.8+ when multiple clear mentions, 0.5-0.7 when few, 0.2-0.4 when very sparse, 0.0 when nothing extractable
 
-Extract metadata from the following text:"""
+Extract from the following text:
+
+{text}"""
 
 
-class MedicalMetadataExtractor(BaseExtractor):
-    """
-    Chunk-level medical metadata extractor (production pattern).
+# Docling unicode artifacts to clean
+_UNICODE_FIXES = [
+    ("\ufb01", "fi"),   # fi ligature
+    ("\ufb02", "fl"),   # fl ligature
+    ("\u2019", "'"),    # right single quote
+    ("\u2018", "'"),    # left single quote
+    ("\u201c", '"'),    # left double quote
+    ("\u201d", '"'),    # right double quote
+    ("\u2013", "-"),    # en dash
+    ("\u2014", "-"),    # em dash
+]
 
-    Extracts metadata from chunks after chunking, using paper_id as cache key.
-    Each paper gets one LLM call, metadata is stamped on all chunks.
-    """
+_CITATION_RE = re.compile(r"\[\d+(?:[-,]\s*\d+)*\]")
+_MULTI_SPACE_RE = re.compile(r"[ \t]+")
+_MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
 
-    def __init__(self, llm: LLM | None = None, **kwargs):
-        """Initialize the extractor with an LLM."""
-        super().__init__(**kwargs)
 
-        if llm is None:
-            model = getattr(
-                settings,
-                "metadata_extraction_model",
-                settings.azure_openai_deployment_name,
-            )
-            llm = AzureOpenAI(
-                model=model,
-                deployment_name=model,
-                api_key=settings.azure_openai_api_key,
-                azure_endpoint=settings.azure_openai_endpoint,
-                api_version=settings.azure_openai_api_version,
-                temperature=0.0,
-            )
-            logger.info(f"Created Azure OpenAI LLM for metadata extraction: {model}")
+def _clean_text(text: str) -> str:
+    """Light cleaning for Docling unicode artifacts and citation markers."""
+    for old, new in _UNICODE_FIXES:
+        text = text.replace(old, new)
+    text = _CITATION_RE.sub("", text)
+    text = _MULTI_SPACE_RE.sub(" ", text)
+    text = _MULTI_NEWLINE_RE.sub("\n\n", text)
+    return text.strip()
 
-        # Store using object.__setattr__ to avoid Pydantic validation
-        object.__setattr__(self, "_llm", llm)
-        object.__setattr__(self, "_cache", {})
 
-        prompt_template = ChatPromptTemplate.from_messages([
-            ("user", EXTRACTION_PROMPT + "\n\n{text}")
-        ])
-        object.__setattr__(self, "_prompt_template", prompt_template)
+def _find_section_text(
+    nodes: Sequence[BaseNode],
+    section_keywords: list[str],
+    max_chars: int = 3000,
+) -> str | None:
+    """Find text from a specific section using Docling headings metadata."""
+    parts = []
+    total = 0
 
-        logger.info("Created medical metadata extractor (chunk-level)")
+    for node in nodes:
+        headings = node.metadata.get("headings") or []
+        heading_text = " > ".join(headings).lower() if headings else ""
 
-    def _extract_relevant_text(self, nodes: Sequence[BaseNode]) -> str:
-        """
-        Extract relevant text from abstract/methods chunks.
-
-        Uses Docling's headings metadata to find relevant sections.
-        """
-        parts = []
-
-        for node in nodes[:10]:  # Check first 10 chunks
+        if any(kw in heading_text for kw in section_keywords):
             content = node.get_content()
-            headings = node.metadata.get("headings") or []
-
-            # Convert headings to searchable string
-            heading_text = " > ".join(headings).lower() if headings else ""
-
-            # Prioritize abstract and methods sections
-            if "abstract" in heading_text:
-                parts.append(f"ABSTRACT:\n{content[:2000]}")
-            elif "method" in heading_text or "material" in heading_text:
-                parts.append(f"METHODS:\n{content[:2000]}")
-            elif "introduction" in heading_text and len(parts) < 2:
-                parts.append(f"INTRODUCTION:\n{content[:1500]}")
-            elif "result" in heading_text and len(parts) < 3:
-                parts.append(f"RESULTS:\n{content[:1500]}")
-
-            # Stop if we have enough
-            if len(parts) >= 3 or sum(len(p) for p in parts) >= 6000:
+            parts.append(content)
+            total += len(content)
+            if total >= max_chars:
                 break
 
-        # Fallback: if no sections found, take first few chunks
-        if not parts and nodes:
-            for node in nodes[:3]:
-                parts.append(node.get_content()[:2000])
+    if not parts:
+        return None
 
-        return "\n\n".join(parts)
-
-    async def aextract(self, nodes: Sequence[BaseNode]) -> list[dict[str, Any]]:
-        """Extract medical metadata and stamp on all nodes."""
-        if not nodes:
-            return []
-
-        try:
-            # Use paper_id as cache key (CRITICAL FIX)
-            paper_id = nodes[0].metadata.get("paper_id")
-
-            if not paper_id:
-                logger.error("No paper_id found in chunk metadata — cannot cache properly")
-                cache_key = "unknown"
-            else:
-                cache_key = paper_id
-
-            # Check cache
-            if cache_key in self._cache:
-                logger.debug(f"Using cached metadata for paper {cache_key}")
-                cached_result = self._cache[cache_key]
-            else:
-                logger.info(f"Extracting metadata for paper {cache_key} ({len(nodes)} chunks)")
-
-                if not getattr(settings, "metadata_extraction_enabled", True):
-                    logger.warning("Metadata extraction is disabled in settings")
-                    cached_result = self._empty_metadata()
-                else:
-                    # Extract relevant text from chunks
-                    text = self._extract_relevant_text(nodes)
-
-                    if not text.strip():
-                        logger.warning(f"No text available for extraction (paper {cache_key})")
-                        cached_result = self._empty_metadata()
-                    else:
-                        # Call LLM with structured output
-                        result = await self._llm.astructured_predict(
-                            output_cls=MedicalMetadata,
-                            prompt=self._prompt_template,
-                            text=text,
-                        )
-
-                        cached_result = result.model_dump()
-
-                        total_terms = sum(
-                            len(v) for k, v in cached_result.items()
-                            if isinstance(v, list)
-                        )
-                        logger.info(
-                            f"Extracted {total_terms} terms for paper {cache_key}, "
-                            f"confidence: {cached_result.get('confidence', 0.0):.2f}"
-                        )
-
-                # Cache result by paper_id
-                self._cache[cache_key] = cached_result
-
-            # Return same metadata for all chunks
-            return [cached_result.copy() for _ in nodes]
-
-        except Exception as e:
-            logger.error(f"Metadata extraction failed: {e}", exc_info=True)
-            return [self._empty_metadata() for _ in nodes]
-
-    def _empty_metadata(self) -> dict[str, Any]:
-        """Return empty metadata structure."""
-        return {
-            "ethnicities": [],
-            "diagnoses": [],
-            "symptoms": [],
-            "menstrual_status": [],
-            "birth_control": [],
-            "hormone_therapy": [],
-            "fertility_treatments": [],
-            "age_mentioned": False,
-            "age_range": None,
-            "confidence": 0.0,
-        }
+    return "\n\n".join(parts)[:max_chars]
 
 
-def create_medical_metadata_extractor(llm: LLM | None = None) -> MedicalMetadataExtractor:
+def _build_extraction_text(
+    title: str | None,
+    nodes: Sequence[BaseNode],
+) -> str:
     """
-    Create a medical metadata extractor.
+    Build the best text for metadata extraction with fallback chain.
 
-    Uses chunk-level extraction with paper_id caching (production pattern).
+    Priority: abstract → introduction → first 3 raw chunks.
     """
-    return MedicalMetadataExtractor(llm=llm)
+    parts = []
+
+    # 1. Try abstract
+    abstract = _find_section_text(nodes, ["abstract"])
+    if abstract:
+        parts.append(f"ABSTRACT:\n{abstract}")
+
+    # 2. Try methods/results for additional context
+    methods = _find_section_text(nodes, ["method", "material"], max_chars=2000)
+    if methods:
+        parts.append(f"METHODS:\n{methods}")
+
+    results = _find_section_text(nodes, ["result"], max_chars=2000)
+    if results:
+        parts.append(f"RESULTS:\n{results}")
+
+    # 3. If no abstract found, try introduction as fallback
+    if not abstract:
+        intro = _find_section_text(nodes, ["introduction", "background"], max_chars=2000)
+        if intro:
+            parts.append(f"INTRODUCTION:\n{intro}")
+
+    # 4. Final fallback: first 3 raw chunks
+    if not parts:
+        logger.warning("No section headings found — falling back to first 3 chunks")
+        for node in nodes[:3]:
+            parts.append(node.get_content()[:2000])
+
+    text = "\n\n".join(parts)
+
+    # Clean Docling artifacts
+    text = _clean_text(text)
+
+    return text
+
+
+def _get_llm() -> LLM:
+    """Create the Azure OpenAI LLM for metadata extraction."""
+    model = getattr(
+        settings,
+        "metadata_extraction_model",
+        settings.azure_openai_deployment_name,
+    )
+    return AzureOpenAI(
+        model=model,
+        deployment_name=model,
+        api_key=settings.azure_openai_api_key,
+        azure_endpoint=settings.azure_openai_endpoint,
+        api_version=settings.azure_openai_api_version,
+        temperature=0.0,
+    )
+
+
+def _empty_metadata() -> dict[str, Any]:
+    """Return empty metadata structure."""
+    return {
+        "ethnicities": [],
+        "diagnoses": [],
+        "symptoms": [],
+        "menstrual_status": [],
+        "birth_control": [],
+        "hormone_therapy": [],
+        "fertility_treatments": [],
+        "age_mentioned": False,
+        "age_range": None,
+        "confidence": 0.0,
+    }
+
+
+async def extract_medical_metadata(
+    title: str | None,
+    nodes: Sequence[BaseNode],
+    llm: LLM | None = None,
+) -> dict[str, Any]:
+    """
+    Extract medical metadata from a paper's content.
+
+    Uses title + abstract (with fallback chain) for extraction,
+    producing unique metadata per paper.
+
+    Args:
+        title: Paper title from Docling
+        nodes: Raw chunk nodes (before filtering/transformation)
+        llm: Optional LLM instance (creates one if not provided)
+
+    Returns:
+        Dictionary of extracted medical metadata
+    """
+    if not nodes:
+        logger.warning("No nodes provided for metadata extraction")
+        return _empty_metadata()
+
+    if not getattr(settings, "metadata_extraction_enabled", True):
+        logger.warning("Metadata extraction is disabled in settings")
+        return _empty_metadata()
+
+    if llm is None:
+        llm = _get_llm()
+
+    # Build extraction text from document sections
+    text = _build_extraction_text(title, nodes)
+    paper_id = nodes[0].metadata.get("paper_id", "unknown")
+
+    if not text.strip():
+        logger.warning(f"No text available for extraction (paper {paper_id})")
+        return _empty_metadata()
+
+    logger.info(
+        f"Extracting metadata for paper '{title or 'Unknown'}' "
+        f"(id: {paper_id}, text: {len(text)} chars)"
+    )
+
+    try:
+        prompt = ChatPromptTemplate.from_messages([
+            ("user", EXTRACTION_PROMPT)
+        ])
+
+        result = await llm.astructured_predict(
+            output_cls=MedicalMetadata,
+            prompt=prompt,
+            title=title or "Unknown",
+            text=text,
+        )
+
+        metadata = result.model_dump()
+
+        total_terms = sum(
+            len(v) for v in metadata.values() if isinstance(v, list)
+        )
+        logger.info(
+            f"Extracted {total_terms} terms for paper '{title}', "
+            f"confidence: {metadata.get('confidence', 0.0):.2f}"
+        )
+
+        return metadata
+
+    except Exception as e:
+        logger.error(f"Metadata extraction failed for paper {paper_id}: {e}", exc_info=True)
+        return _empty_metadata()
+
+
+def stamp_metadata_on_nodes(
+    nodes: Sequence[BaseNode],
+    metadata: dict[str, Any],
+) -> list[BaseNode]:
+    """
+    Stamp extracted metadata onto all chunk nodes.
+
+    Args:
+        nodes: Processed chunk nodes
+        metadata: Extracted medical metadata dict
+
+    Returns:
+        Same nodes with metadata added (modified in-place and returned)
+    """
+    for node in nodes:
+        if node.metadata is None:
+            node.metadata = {}
+        node.metadata.update(metadata)
+
+    logger.info(f"Stamped metadata on {len(nodes)} nodes")
+    return list(nodes)
