@@ -33,8 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from medical_agent.core.config import settings
-from medical_agent.core.exceptions import DatabaseException
-from medical_agent.infrastructure.database.models import Paper, PaperChunk
+from medical_agent.infrastructure.database.models import Paper
 from medical_agent.infrastructure.database.session import get_session_context
 from medical_agent.ingestion.metadata import create_medical_metadata_extractor
 from medical_agent.ingestion.chunk_filter import filter_chunks
@@ -324,8 +323,7 @@ class MedicalIngestionPipeline:
 
                 # Step 2.4: Add contextual headers (Anthropic's approach)
                 logger.info("Step 4/5: Adding contextual headers...")
-                full_document_text = document.get_content()
-                nodes = await add_contextual_headers(nodes, full_document_text)
+                nodes = await add_contextual_headers(nodes, title=result.paper_title)
                 logger.info(f"✓ Context added: {len(nodes)} chunks")
 
                 # Step 2.5: Extract metadata and embed (direct execution)

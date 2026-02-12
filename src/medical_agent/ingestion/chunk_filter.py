@@ -1,15 +1,11 @@
 """
-Heuristic chunk quality filter (MVP).
+Chunk quality filter using Docling structural metadata.
 
-Removes chunks that are obviously garbage:
-- Bibliography/reference sections
-- Image/figure placeholders
+Uses Docling's `headings` and `doc_items` labels for reliable section filtering,
+plus lightweight heuristics for noise that Docling labels don't catch:
 - Dots-only or whitespace-heavy noise
-- Headers/footers/page numbers
+- Low alpha ratio (equations, symbols)
 - Very short chunks (< 15 words)
-- Very long chunks (> 300 words — likely rambling)
-
-Industry finding: Can remove up to 60.5% of noisy chunks.
 """
 
 import re
@@ -18,77 +14,102 @@ from llama_index.core.schema import BaseNode
 
 logger = logging.getLogger(__name__)
 
-# Patterns for structural garbage
-BIBLIOGRAPHY_PATTERNS = [
-    r"^\s*\[\d+\]\s+[A-Z][a-z]+",           # [1] Author Name...
-    r"^\s*\d+\.\s+[A-Z][a-z]+.*et al",       # 1. Author et al.
-    r"^\s*references?\s*$",                     # "References" heading
-    r"^\s*bibliography\s*$",                    # "Bibliography" heading
-    r"doi\.org|DOI:\s*10\.",                    # DOI links
-    r"PMID:\s*\d+",                             # PubMed IDs
-]
+# Sections to drop (matched against Docling headings)
+EXCLUDED_SECTIONS = {
+    "references", "bibliography", "acknowledgements", "acknowledgments",
+    "appendix", "supplementary", "supplemental", "conflict of interest",
+    "funding", "author contributions", "abbreviations",
+}
 
+# Docling doc_item labels to drop
+EXCLUDED_LABELS = {"reference", "page_header", "page_footer", "document_index"}
+
+# Noise patterns for content-level checks (things Docling labels won't catch)
 NOISE_PATTERNS = [
-    r"^\s*\[?fig(ure)?\s*\d+\]?",             # Figure references
-    r"^\s*\[?table\s*\d+\]?",                  # Table references (caption only)
-    r"^[\s\.·•\-_=]{10,}$",                    # Dots, bullets, lines
-    r"^\s*page\s+\d+\s*(of\s+\d+)?\s*$",      # Page numbers
-    r"^[^\w]*$",                                 # No word characters at all
+    re.compile(r"^[\s\.·•\-_=]{10,}$", re.IGNORECASE | re.MULTILINE),  # Dots, bullets, lines
+    re.compile(r"^\s*page\s+\d+\s*(of\s+\d+)?\s*$", re.IGNORECASE | re.MULTILINE),  # Page numbers
+    re.compile(r"^[^\w]*$", re.IGNORECASE | re.MULTILINE),  # No word characters
 ]
 
+# Short chunks with these patterns are header/footer garbage
 HEADER_FOOTER_PATTERNS = [
-    r"journal\s+of\s+\w+",                     # Journal headers
-    r"copyright\s+©?\s*\d{4}",                 # Copyright notices
-    r"all\s+rights\s+reserved",                # Rights notices
-    r"downloaded\s+from",                       # Download notices
+    re.compile(r"journal\s+of\s+\w+", re.IGNORECASE),
+    re.compile(r"copyright\s+©?\s*\d{4}", re.IGNORECASE),
+    re.compile(r"all\s+rights\s+reserved", re.IGNORECASE),
+    re.compile(r"downloaded\s+from", re.IGNORECASE),
 ]
 
-# Compiled patterns
-_bib_re = [re.compile(p, re.IGNORECASE | re.MULTILINE) for p in BIBLIOGRAPHY_PATTERNS]
-_noise_re = [re.compile(p, re.IGNORECASE | re.MULTILINE) for p in NOISE_PATTERNS]
-_header_re = [re.compile(p, re.IGNORECASE) for p in HEADER_FOOTER_PATTERNS]
+
+def _is_excluded_section(node: BaseNode) -> bool:
+    """Check if chunk belongs to an excluded section using Docling headings."""
+    headings = node.metadata.get("headings") or []
+    for heading in headings:
+        if not isinstance(heading, str):
+            continue
+        heading_lower = heading.strip().lower()
+        if any(excluded in heading_lower for excluded in EXCLUDED_SECTIONS):
+            return True
+    return False
 
 
-def is_low_quality_chunk(node: BaseNode, min_words: int = 15, max_words: int = 300) -> bool:
+def _has_excluded_labels(node: BaseNode) -> bool:
+    """Check if chunk's doc_items are all excluded Docling labels."""
+    doc_items = node.metadata.get("doc_items") or []
+    if not doc_items:
+        return False
+
+    labels = set()
+    for item in doc_items:
+        if isinstance(item, dict):
+            label = (item.get("label") or "").lower()
+        else:
+            label = getattr(item, "label", "")
+            if hasattr(label, "value"):
+                label = label.value
+            label = str(label).lower()
+        if label:
+            labels.add(label)
+
+    return bool(labels) and labels.issubset(EXCLUDED_LABELS)
+
+
+def is_low_quality_chunk(node: BaseNode, min_words: int = 15) -> bool:
     """
-    Check if a chunk is structural garbage and should be filtered out.
+    Check if a chunk should be filtered out.
 
-    Args:
-        node: The chunk node to evaluate
-        min_words: Minimum word count threshold
-        max_words: Maximum word count threshold
+    Uses Docling structural metadata first (reliable), then falls back
+    to content heuristics for noise detection.
 
     Returns:
         True if chunk should be REMOVED
     """
     text = node.get_content().strip()
-
-    # Length check: too short or too long
     word_count = len(text.split())
-    if word_count < min_words or word_count > max_words:
+
+    # Too short to be useful
+    if word_count < min_words:
         return True
 
-    # Check section type in metadata
-    chunk_type = (node.metadata.get("chunk_type", "") or "").lower()
-    if chunk_type in ("references", "bibliography", "acknowledgements"):
+    # Docling structural filters (reliable)
+    if _is_excluded_section(node):
         return True
 
-    # Bibliography patterns
-    bib_matches = sum(1 for p in _bib_re if p.search(text))
-    if bib_matches >= 2:
+    if _has_excluded_labels(node):
         return True
 
-    # Pure noise
-    lines = text.strip().split("\n")
-    noise_lines = sum(1 for line in lines if any(p.match(line.strip()) for p in _noise_re))
+    # Content heuristics (catches what Docling labels miss)
+
+    # Majority noise lines
+    lines = text.split("\n")
+    noise_lines = sum(1 for line in lines if any(p.match(line.strip()) for p in NOISE_PATTERNS))
     if noise_lines / max(len(lines), 1) > 0.5:
         return True
 
-    # Header/footer content
-    if word_count < 30 and any(p.search(text) for p in _header_re):
+    # Header/footer garbage (short chunks only)
+    if word_count < 30 and any(p.search(text) for p in HEADER_FOOTER_PATTERNS):
         return True
 
-    # High ratio of non-alphabetic characters (equations, symbols)
+    # Equation/symbol heavy (low readable text ratio)
     alpha_ratio = sum(c.isalpha() or c.isspace() for c in text) / max(len(text), 1)
     if alpha_ratio < 0.4:
         return True
@@ -98,19 +119,19 @@ def is_low_quality_chunk(node: BaseNode, min_words: int = 15, max_words: int = 3
 
 def filter_chunks(nodes: list[BaseNode]) -> list[BaseNode]:
     """
-    Filter out structural garbage chunks.
+    Filter out low-quality chunks.
 
     Args:
-        nodes: List of chunk nodes from parser
+        nodes: List of chunk nodes from DoclingNodeParser
 
     Returns:
-        Filtered list with obvious garbage removed
+        Filtered list with structural garbage and noise removed
     """
     original_count = len(nodes)
     filtered = [n for n in nodes if not is_low_quality_chunk(n)]
     removed = original_count - len(filtered)
 
     if removed > 0:
-        logger.info(f"Chunk filter: {original_count} → {len(filtered)} (removed {removed} chunks, {removed/original_count*100:.1f}%)")
+        logger.info(f"Chunk filter: {original_count} → {len(filtered)} (removed {removed}, {removed/original_count*100:.1f}%)")
 
     return filtered
