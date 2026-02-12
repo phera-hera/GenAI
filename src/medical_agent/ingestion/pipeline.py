@@ -282,7 +282,7 @@ class MedicalIngestionPipeline:
 
                 # Get the first document (DoclingReader typically returns one document per PDF)
                 document = documents[0]
-                result.paper_title = document.metadata.get("title", "Unknown")
+                result.paper_title = (document.metadata.get("title") or Path(gcp_path).stem or "Unknown")
 
                 # Add paper metadata to document
                 document.metadata["paper_id"] = str(result.paper_id)
