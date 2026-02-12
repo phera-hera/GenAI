@@ -187,8 +187,7 @@ class MedicalIngestionPipeline:
             dimensions=self.config.embedding_dimensions,
         )
 
-        # Initialize metadata extractor using native LlamaIndex
-        # This replaces custom extractor, LLM client, and normalizer (650+ lines → 1 line)
+        # Initialize metadata extractor (chunk-level, production pattern)
         self.metadata_extractor = create_medical_metadata_extractor()
 
         # Initialize HybridChunker for token-aware section chunking
@@ -208,7 +207,7 @@ class MedicalIngestionPipeline:
         # before metadata extraction and embedding. See process_paper() for flow.
 
         logger.info("Initialized LlamaIndex ingestion pipeline (Phase 2: Enhanced)")
-        logger.info("Pipeline flow: Chunk(1024) → Filter → Table-to-NL → Context → Metadata → Embed")
+        logger.info("Pipeline flow: Parse → Chunk(1024) → Filter → Table-to-NL → Context → Metadata(chunk-level) → Embed")
 
     def compute_file_hash(self, content: bytes) -> str:
         """Compute SHA-256 hash of file content for deduplication."""
@@ -300,42 +299,45 @@ class MedicalIngestionPipeline:
             finally:
                 result.parse_time_ms = int((time.monotonic() - parse_start) * 1000)
 
-            # Stage 2: Chunk documents
+            # Stage 2: Chunk and process
             pipeline_start = time.monotonic()
             try:
-                logger.info(f"Starting pipeline (chunk + filter + transform + embed) for paper {result.paper_id}")
+                logger.info(f"Starting pipeline (chunk + filter + transform + metadata + embed) for paper {result.paper_id}")
 
                 # Step 2.1: Chunk with DoclingNodeParser
-                logger.info("Step 1/5: Chunking document...")
+                logger.info("Step 1/6: Chunking document...")
                 nodes = self.node_parser.get_nodes_from_documents([document])
                 logger.info(f"✓ Chunked: {len(nodes)} raw chunks")
                 result.chunked = True
 
-                # Step 2.2: Filter out structural garbage
-                logger.info("Step 2/5: Filtering structural noise...")
+                # Step 2.2: Add paper_id to chunks BEFORE filtering (needed for metadata extraction)
+                for node in nodes:
+                    if node.metadata is None:
+                        node.metadata = {}
+                    node.metadata["paper_id"] = str(result.paper_id)
+
+                # Step 2.3: Filter out structural garbage
+                logger.info("Step 2/6: Filtering structural noise...")
                 nodes = filter_chunks(nodes)
                 logger.info(f"✓ Filtered: {len(nodes)} chunks after filter")
 
-                # Step 2.3: Transform tables to natural language
-                logger.info("Step 3/5: Transforming tables to natural language...")
+                # Step 2.4: Transform tables to natural language
+                logger.info("Step 3/6: Transforming tables to natural language...")
                 nodes = await transform_table_chunks(nodes)
                 logger.info(f"✓ Tables transformed: {len(nodes)} chunks")
 
-                # Step 2.4: Add contextual headers (Anthropic's approach)
-                logger.info("Step 4/5: Adding contextual headers...")
+                # Step 2.5: Add contextual headers (Anthropic's approach)
+                logger.info("Step 4/6: Adding contextual headers...")
                 nodes = await add_contextual_headers(nodes, title=result.paper_title)
                 logger.info(f"✓ Context added: {len(nodes)} chunks")
 
-                # Step 2.5: Extract metadata and embed (direct execution)
-                logger.info("Step 5/5: Extracting metadata and generating embeddings...")
-
-                # Extract medical metadata from nodes
-                logger.info("  - Extracting medical metadata...")
+                # Step 2.6: Extract medical metadata from chunks (production pattern)
+                logger.info("Step 5/6: Extracting medical metadata from chunks...")
                 nodes = await self.metadata_extractor.acall(nodes)
-                logger.info(f"  ✓ Metadata extracted")
+                logger.info(f"✓ Metadata extracted and stamped on chunks")
 
-                # Generate embeddings
-                logger.info("  - Generating embeddings...")
+                # Step 2.7: Generate embeddings
+                logger.info("Step 6/6: Generating embeddings...")
                 nodes = await self.embedding_model.acall(nodes)
                 logger.info(f"✓ Pipeline completed: {len(nodes)} embedded nodes")
 
@@ -371,11 +373,7 @@ class MedicalIngestionPipeline:
                 result.paper_title = paper.title
                 logger.info(f"Paper record created: {paper.title}")
 
-                # Add paper_id to all nodes' metadata
-                for node in nodes:
-                    if node.metadata is None:
-                        node.metadata = {}
-                    node.metadata["paper_id"] = str(paper.id)
+                # paper_id already added to chunks earlier in pipeline (before metadata extraction)
 
                 # Store nodes using native PGVectorStore
                 logger.info(f"Starting to store {len(nodes)} nodes to vector store")

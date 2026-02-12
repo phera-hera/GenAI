@@ -1,3 +1,11 @@
+"""
+Chunk-level medical metadata extraction (production approach).
+
+Extracts metadata from chunks after chunking. Uses paper_id as cache key
+to ensure each paper gets unique metadata extraction.
+
+Industry standard: Extract metadata during/after chunking phase, not before.
+"""
 
 import logging
 from typing import Any, Sequence
@@ -15,12 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class MedicalMetadata(BaseModel):
-    """
-    Medical metadata extracted from research papers.
-
-    Uses Pydantic BaseModel for native LlamaIndex integration with
-    automatic serialization and structured output validation.
-    """
+    """Medical metadata extracted from research papers."""
 
     ethnicities: list[str] = Field(
         default_factory=list,
@@ -108,7 +111,6 @@ class MedicalMetadata(BaseModel):
     )
 
 
-# Extraction prompt that emphasizes standardized terms
 EXTRACTION_PROMPT = """You are extracting metadata from research papers for a women's health application.
 
 CRITICAL RULES:
@@ -139,29 +141,24 @@ OUTPUT:
 Extract metadata from the following text:"""
 
 
-class SimplifiedMedicalMetadataExtractor(BaseExtractor):
+class MedicalMetadataExtractor(BaseExtractor):
     """
-    Simplified medical metadata extractor using LlamaIndex BaseExtractor.
+    Chunk-level medical metadata extractor (production pattern).
 
-    This replaces 650+ lines of custom code with ~100 lines using native
-    LlamaIndex functionality:
-    - Automatic caching per document (via ref_doc_id)
-    - Structured output via Pydantic + LLM
-    - Clean integration with IngestionPipeline
+    Extracts metadata from chunks after chunking, using paper_id as cache key.
+    Each paper gets one LLM call, metadata is stamped on all chunks.
     """
 
     def __init__(self, llm: LLM | None = None, **kwargs):
         """Initialize the extractor with an LLM."""
         super().__init__(**kwargs)
 
-        # Create LLM if not provided
         if llm is None:
             model = getattr(
                 settings,
                 "metadata_extraction_model",
                 settings.azure_openai_deployment_name,
             )
-
             llm = AzureOpenAI(
                 model=model,
                 deployment_name=model,
@@ -170,39 +167,54 @@ class SimplifiedMedicalMetadataExtractor(BaseExtractor):
                 api_version=settings.azure_openai_api_version,
                 temperature=0.0,
             )
-
             logger.info(f"Created Azure OpenAI LLM for metadata extraction: {model}")
 
-        # Store LLM using object.__setattr__ to avoid Pydantic validation
+        # Store using object.__setattr__ to avoid Pydantic validation
         object.__setattr__(self, "_llm", llm)
         object.__setattr__(self, "_cache", {})
 
-        # Create prompt template with placeholder
         prompt_template = ChatPromptTemplate.from_messages([
             ("user", EXTRACTION_PROMPT + "\n\n{text}")
         ])
         object.__setattr__(self, "_prompt_template", prompt_template)
 
-        logger.info("Created simplified medical metadata extractor")
+        logger.info("Created medical metadata extractor (chunk-level)")
 
     def _extract_relevant_text(self, nodes: Sequence[BaseNode]) -> str:
-        """Extract relevant text from abstract/methods sections."""
+        """
+        Extract relevant text from abstract/methods chunks.
+
+        Uses Docling's headings metadata to find relevant sections.
+        """
         parts = []
 
-        for node in nodes[:5]:  # Check first 5 nodes
+        for node in nodes[:10]:  # Check first 10 chunks
             content = node.get_content()
-            section_type = node.metadata.get("section_type", "").lower()
-            chunk_type = node.metadata.get("chunk_type", "").lower()
+            headings = node.metadata.get("headings") or []
 
-            # Prioritize abstract and methods
-            if "abstract" in section_type or chunk_type == "abstract":
+            # Convert headings to searchable string
+            heading_text = " > ".join(headings).lower() if headings else ""
+
+            # Prioritize abstract and methods sections
+            if "abstract" in heading_text:
                 parts.append(f"ABSTRACT:\n{content[:2000]}")
-            elif "method" in section_type:
+            elif "method" in heading_text or "material" in heading_text:
                 parts.append(f"METHODS:\n{content[:2000]}")
-            elif len(parts) < 3:
-                parts.append(content[:1500])
+            elif "introduction" in heading_text and len(parts) < 2:
+                parts.append(f"INTRODUCTION:\n{content[:1500]}")
+            elif "result" in heading_text and len(parts) < 3:
+                parts.append(f"RESULTS:\n{content[:1500]}")
 
-        return "\n\n".join(parts) if parts else nodes[0].get_content()[:3000] if nodes else ""
+            # Stop if we have enough
+            if len(parts) >= 3 or sum(len(p) for p in parts) >= 6000:
+                break
+
+        # Fallback: if no sections found, take first few chunks
+        if not parts and nodes:
+            for node in nodes[:3]:
+                parts.append(node.get_content()[:2000])
+
+        return "\n\n".join(parts)
 
     async def aextract(self, nodes: Sequence[BaseNode]) -> list[dict[str, Any]]:
         """Extract medical metadata and stamp on all nodes."""
@@ -210,35 +222,40 @@ class SimplifiedMedicalMetadataExtractor(BaseExtractor):
             return []
 
         try:
-            # Check cache using document ID
-            doc_id = nodes[0].ref_doc_id or "unknown"
+            # Use paper_id as cache key (CRITICAL FIX)
+            paper_id = nodes[0].metadata.get("paper_id")
 
-            if doc_id in self._cache:
-                logger.debug(f"Using cached metadata for document {doc_id}")
-                cached_result = self._cache[doc_id]
+            if not paper_id:
+                logger.error("No paper_id found in chunk metadata — cannot cache properly")
+                cache_key = "unknown"
             else:
-                logger.info(f"Extracting metadata for document {doc_id} ({len(nodes)} nodes)")
+                cache_key = paper_id
 
-                # Check if extraction is enabled
+            # Check cache
+            if cache_key in self._cache:
+                logger.debug(f"Using cached metadata for paper {cache_key}")
+                cached_result = self._cache[cache_key]
+            else:
+                logger.info(f"Extracting metadata for paper {cache_key} ({len(nodes)} chunks)")
+
                 if not getattr(settings, "metadata_extraction_enabled", True):
                     logger.warning("Metadata extraction is disabled in settings")
                     cached_result = self._empty_metadata()
                 else:
-                    # Extract relevant text
+                    # Extract relevant text from chunks
                     text = self._extract_relevant_text(nodes)
 
                     if not text.strip():
-                        logger.warning(f"No text available for extraction (doc {doc_id})")
+                        logger.warning(f"No text available for extraction (paper {cache_key})")
                         cached_result = self._empty_metadata()
                     else:
-                        # Call LLM with structured output using prompt template
+                        # Call LLM with structured output
                         result = await self._llm.astructured_predict(
                             output_cls=MedicalMetadata,
                             prompt=self._prompt_template,
                             text=text,
                         )
 
-                        # Convert Pydantic model to dict
                         cached_result = result.model_dump()
 
                         total_terms = sum(
@@ -246,14 +263,14 @@ class SimplifiedMedicalMetadataExtractor(BaseExtractor):
                             if isinstance(v, list)
                         )
                         logger.info(
-                            f"Extracted {total_terms} terms for doc {doc_id}, "
+                            f"Extracted {total_terms} terms for paper {cache_key}, "
                             f"confidence: {cached_result.get('confidence', 0.0):.2f}"
                         )
 
-                # Cache result
-                self._cache[doc_id] = cached_result
+                # Cache result by paper_id
+                self._cache[cache_key] = cached_result
 
-            # Return metadata for all nodes (same metadata for whole document)
+            # Return same metadata for all chunks
             return [cached_result.copy() for _ in nodes]
 
         except Exception as e:
@@ -276,58 +293,10 @@ class SimplifiedMedicalMetadataExtractor(BaseExtractor):
         }
 
 
-def create_medical_metadata_extractor(
-    llm: LLM | None = None,
-) -> SimplifiedMedicalMetadataExtractor:
+def create_medical_metadata_extractor(llm: LLM | None = None) -> MedicalMetadataExtractor:
     """
-    Create a simplified medical metadata extractor.
+    Create a medical metadata extractor.
 
-    This replaces:
-    - MedicalMetadataExtractor (217 lines)
-    - MetadataLLMClient (166 lines)
-    - TermNormalizer (261 lines)
-    - ExtractedMetadata dataclass
-
-    With a single ~100 line class that uses:
-    - LlamaIndex's structured_predict for Pydantic models
-    - Native BaseExtractor caching
-    - Prompt engineering for normalization (no regex needed)
-
-    Args:
-        llm: Optional LLM instance (creates Azure OpenAI if None)
-
-    Returns:
-        Configured extractor ready for use in IngestionPipeline
+    Uses chunk-level extraction with paper_id caching (production pattern).
     """
-    return SimplifiedMedicalMetadataExtractor(llm=llm)
-
-
-def dict_to_medical_metadata(data: dict[str, Any]) -> dict[str, Any]:
-    """
-    Convert extracted metadata dict to storage format.
-
-    LlamaIndex returns metadata as dicts. This function ensures
-    consistent structure for storage in JSONB.
-
-    Args:
-        data: Raw metadata dict from LLMMetadataExtractor
-
-    Returns:
-        Cleaned metadata dict ready for storage
-    """
-    # LLMMetadataExtractor returns flat dict with field names as keys
-    # Validate and clean
-    return {
-        "extracted_metadata": {
-            "ethnicities": data.get("ethnicities", []),
-            "diagnoses": data.get("diagnoses", []),
-            "symptoms": data.get("symptoms", []),
-            "menstrual_status": data.get("menstrual_status", []),
-            "birth_control": data.get("birth_control", []),
-            "hormone_therapy": data.get("hormone_therapy", []),
-            "fertility_treatments": data.get("fertility_treatments", []),
-            "age_mentioned": data.get("age_mentioned", False),
-            "age_range": data.get("age_range"),
-            "confidence": data.get("confidence", 0.0),
-        }
-    }
+    return MedicalMetadataExtractor(llm=llm)
