@@ -6,6 +6,7 @@ to create synthetic question-answer pairs for evaluation.
 
 Usage:
     python -m medical_agent.evaluation.generate_testset --size 20
+    python -m medical_agent.evaluation.generate_testset --size 30 --seed 42  # reproducible
 """
 
 import asyncio
@@ -27,19 +28,25 @@ logger = logging.getLogger(__name__)
 
 TESTSETS_DIR = Path(__file__).parent / "testsets"
 
+# Instructions for RAGAS to generate questions from end-user POV
+MEDICAL_LLM_CONTEXT = """Most questions should be from the point of view of a user who has provided their health profile and vaginal pH value, and wants personalised answers about what the research means for her. She may ask follow-up questions about technical medical terms. For evaluation diversity, some generic or non-personalised questions are acceptable."""
+
 
 async def fetch_chunks_as_langchain_docs(
     limit: int = 200,
     paper_title_filter: str | None = None,
+    seed: int | None = None,
 ) -> list[LangchainDocument]:
     """
     Fetch paper chunks from the database as LangChain Documents.
 
     Uses raw SQL to avoid loading 3072-dim embedding vectors into memory.
+    Orders by RANDOM() for diversity across papers; pass seed for reproducibility.
 
     Args:
         limit: Maximum number of chunks to fetch.
         paper_title_filter: Optional filter to only fetch chunks from a specific paper.
+        seed: Optional seed for reproducible random ordering. If None, uses RANDOM().
 
     Returns:
         List of LangchainDocument objects with page_content and metadata.
@@ -50,6 +57,12 @@ async def fetch_chunks_as_langchain_docs(
     if paper_title_filter:
         query += " WHERE metadata_->>'title' ILIKE :title"
         params["title"] = f"%{paper_title_filter}%"
+
+    if seed is not None:
+        query += " ORDER BY md5(COALESCE(node_id::text, '') || :seed)"
+        params["seed"] = str(seed)
+    else:
+        query += " ORDER BY RANDOM()"
 
     query += " LIMIT :limit"
     params["limit"] = limit
@@ -88,10 +101,26 @@ async def fetch_chunks_as_langchain_docs(
     return documents
 
 
+def _build_query_distribution(llm, llm_context: str | None = None):
+    """Build 80% single-hop / 20% multi-hop query distribution."""
+    from ragas.testset.synthesizers import (
+        MultiHopAbstractQuerySynthesizer,
+        MultiHopSpecificQuerySynthesizer,
+        SingleHopSpecificQuerySynthesizer,
+    )
+
+    return [
+        (SingleHopSpecificQuerySynthesizer(llm=llm, llm_context=llm_context), 0.8),
+        (MultiHopAbstractQuerySynthesizer(llm=llm, llm_context=llm_context), 0.1),
+        (MultiHopSpecificQuerySynthesizer(llm=llm, llm_context=llm_context), 0.1),
+    ]
+
+
 async def generate_testset(
     testset_size: int = 20,
     limit_chunks: int = 200,
     paper_title_filter: str | None = None,
+    seed: int | None = None,
 ) -> Path:
     """
     Generate a synthetic test set from database chunks using RAGAS.
@@ -100,6 +129,7 @@ async def generate_testset(
         testset_size: Number of test questions to generate.
         limit_chunks: Maximum chunks to fetch from the database.
         paper_title_filter: Optional filter for specific paper title.
+        seed: Optional seed for reproducible chunk ordering.
 
     Returns:
         Path to the saved CSV test set file.
@@ -109,20 +139,27 @@ async def generate_testset(
     setup_langsmith_tracing("testset-generation")
 
     logger.info(
-        "Generating testset: size=%d, chunk_limit=%d, filter=%s",
+        "Generating testset: size=%d, chunk_limit=%d, filter=%s, seed=%s",
         testset_size,
         limit_chunks,
         paper_title_filter,
+        seed,
     )
 
-    documents = await fetch_chunks_as_langchain_docs(limit_chunks, paper_title_filter)
+    documents = await fetch_chunks_as_langchain_docs(
+        limit_chunks, paper_title_filter, seed=seed
+    )
     if not documents:
         raise ValueError("No chunks found in database. Run paper ingestion first.")
 
+    llm = get_evaluator_llm()
     generator = TestsetGenerator(
-        llm=get_evaluator_llm(),
+        llm=llm,
         embedding_model=get_evaluator_embeddings(),
+        llm_context=MEDICAL_LLM_CONTEXT,
     )
+
+    query_distribution = _build_query_distribution(llm, llm_context=MEDICAL_LLM_CONTEXT)
 
     # Use generate_with_chunks: our DB chunks are pre-chunked, so we skip
     # HeadlinesExtractor/HeadlineSplitter (which cause "headlines not found" errors
@@ -130,6 +167,7 @@ async def generate_testset(
     testset = generator.generate_with_chunks(
         chunks=documents,
         testset_size=testset_size,
+        query_distribution=query_distribution,
     )
 
     # Save as timestamped CSV
@@ -155,6 +193,12 @@ def main() -> None:
     parser.add_argument("--size", type=int, default=20, help="Number of test questions")
     parser.add_argument("--limit", type=int, default=200, help="Max chunks to fetch")
     parser.add_argument("--paper", type=str, default=None, help="Filter by paper title")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Seed for reproducible chunk ordering (enables diverse paper coverage)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -163,6 +207,7 @@ def main() -> None:
         testset_size=args.size,
         limit_chunks=args.limit,
         paper_title_filter=args.paper,
+        seed=args.seed,
     ))
 
 

@@ -13,9 +13,14 @@ Test set CSVs must include the following columns:
 
 ## Generating a Synthetic Test Set
 
+Generation uses 80% single-hop (simple) and 20% multi-hop questions, with medical user POV instructions. Chunks are randomly sampled for diversity across papers.
+
 ```bash
-# Generate 20 questions from up to 200 database chunks
+# Generate 20 questions from up to 200 database chunks (random order for diversity)
 python -m medical_agent.evaluation.generate_testset --size 20
+
+# Reproducible generation (same chunk selection each run)
+python -m medical_agent.evaluation.generate_testset --size 20 --seed 42
 
 # Generate from a specific paper
 python -m medical_agent.evaluation.generate_testset --size 10 --paper "vaginal microbiome"
