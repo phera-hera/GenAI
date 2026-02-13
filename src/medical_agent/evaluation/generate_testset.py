@@ -124,8 +124,11 @@ async def generate_testset(
         embedding_model=get_evaluator_embeddings(),
     )
 
-    testset = generator.generate_with_langchain_docs(
-        documents=documents,
+    # Use generate_with_chunks: our DB chunks are pre-chunked, so we skip
+    # HeadlinesExtractor/HeadlineSplitter (which cause "headlines not found" errors
+    # when documents are short or already chunked)
+    testset = generator.generate_with_chunks(
+        chunks=documents,
         testset_size=testset_size,
     )
 
