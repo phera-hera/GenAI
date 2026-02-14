@@ -40,6 +40,8 @@ from medical_agent.evaluation.ragas_config import (
 logger = logging.getLogger(__name__)
 
 RESULTS_DIR = Path(__file__).parent / "results"
+# Keep defined for future golden-dataset evaluation, but do not use for now.
+FACTUAL_CORRECTNESS_METRIC = FactualCorrectness(mode="f1")
 
 
 def parse_docs_text_to_contexts(docs_text: str) -> list[str]:
@@ -211,7 +213,7 @@ async def run_evaluation(
             LLMContextRecall(),
             LLMContextPrecisionWithReference(),
             ResponseRelevancy(),
-            FactualCorrectness(),
+            # FACTUAL_CORRECTNESS_METRIC,  # Temporarily disabled
         ]
 
     logger.info("Running RAGAS evaluation with %d metrics on %d samples", len(metrics), len(samples))

@@ -311,27 +311,24 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
         assistant_message = result["messages"][-1]
         agent_reply = assistant_message.get("content", "") if isinstance(assistant_message, dict) else getattr(assistant_message, "content", "")
 
-        # Extract citations and filter to only those actually used
+        # Pass ALL citations through with their original numbering so
+        # [3] in the LLM response text maps to citations[2] (index 2 = id 3).
         raw_citations = result.get("citations", [])
         used_citation_ids = set(result.get("used_citations", []))
 
-        # Filter citations to only include those actually used in the response
-        # If used_citations is empty, show no citations (LLM found no relevant info)
         citations = []
         for c in raw_citations:
-            citation_id = c.get("id")
-            if citation_id in used_citation_ids:
-                citations.append(
-                    CitationResponse(
-                        paper_id=str(c.get("node_id", c.get("id", "unknown"))),
-                        title=c.get("file") or "Unknown Paper",
-                        authors=None,  # Not available in chunk metadata
-                        doi=None,  # Not available in chunk metadata
-                        relevant_section=c.get("preview", ""),
-                    )
+            citations.append(
+                CitationResponse(
+                    paper_id=str(c.get("node_id", c.get("id", "unknown"))),
+                    title=c.get("file") or "Unknown Paper",
+                    authors=None,
+                    doi=None,
+                    relevant_section=c.get("preview", ""),
                 )
+            )
 
-        logger.info(f"Analysis complete: {len(citations)} citations used (of {len(raw_citations)} retrieved)")
+        logger.info(f"Analysis complete: {len(used_citation_ids)} citations used (of {len(raw_citations)} retrieved)")
 
         # Build medical disclaimer
         disclaimers = (
