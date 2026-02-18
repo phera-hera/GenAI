@@ -6,7 +6,7 @@ to create synthetic question-answer pairs for evaluation.
 
 Usage:
     python -m medical_agent.evaluation.generate_testset --size 20
-    python -m medical_agent.evaluation.generate_testset --size 30 --seed 42  # reproducible
+    python -m medical_agent.evaluation.generate_testset --size 20 --seed 42  # reproducible
 """
 
 import asyncio
