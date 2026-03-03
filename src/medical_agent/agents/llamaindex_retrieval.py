@@ -6,6 +6,7 @@ Returns NodeWithScore objects for use in LangGraph workflows.
 """
 
 import logging
+from typing import TYPE_CHECKING
 
 from llama_index.core import VectorStoreIndex
 from llama_index.core.schema import NodeWithScore
@@ -16,16 +17,19 @@ from medical_agent.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from llama_index.core.base.base_retriever import BaseRetriever
+
 
 # ============================================================================
 # Retriever Builder
 # ============================================================================
 
 # Module-level cache for retriever singleton
-_retriever_cache = {}
+_retriever_cache: dict[int, "BaseRetriever"] = {}
 
 
-def build_retriever(similarity_top_k: int = 5):
+def build_retriever(similarity_top_k: int = 5) -> "BaseRetriever":
     """
     Build or return cached retriever with vector store connection.
 
@@ -35,7 +39,7 @@ def build_retriever(similarity_top_k: int = 5):
         similarity_top_k: Number of top chunks to retrieve
 
     Returns:
-        Configured retriever object
+        Configured LlamaIndex BaseRetriever instance.
     """
     # Check cache first
     cache_key = similarity_top_k

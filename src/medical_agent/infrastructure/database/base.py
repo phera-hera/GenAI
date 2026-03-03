@@ -6,7 +6,7 @@ Provides the declarative base and common model mixins for all database models.
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 
 from sqlalchemy import DateTime, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -31,7 +31,7 @@ class Base(DeclarativeBase):
         ).lstrip("_")
 
     # Type annotation map for common types
-    type_annotation_map = {
+    type_annotation_map: ClassVar[dict[type[Any], Any]] = {
         datetime: DateTime(timezone=True),
     }
 

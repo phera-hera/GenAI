@@ -51,7 +51,7 @@ class PaperManager:
     data consistency.
     """
 
-    def __init__(self, storage_client: Optional[GCPStorageClient] = None):
+    def __init__(self, storage_client: Optional[GCPStorageClient] = None) -> None:
         """
         Initialize the paper manager.
 
@@ -163,6 +163,7 @@ class PaperManager:
             raise
 
         # Step 5: Delete from GCP LAST (irreversible, but DB is already clean)
+        # At this point DB state is authoritative; GCP cleanup is best-effort.
         if delete_from_gcp and gcp_path:
             try:
                 gcp_file_path = self._extract_gcp_path(gcp_path)
@@ -184,13 +185,17 @@ class PaperManager:
 
         elif not delete_from_gcp:
             logger.info("Skipped GCP deletion (delete_from_gcp=False)")
+            # Explicit opt-out is considered successful for this operation mode.
             deleted_from_gcp = True
 
         elif not gcp_path:
             logger.warning("No GCP path found for paper")
+            # Missing storage path means there is nothing actionable to delete.
             deleted_from_gcp = True
 
         # Return comprehensive result
+        # `error` may be populated even when partial_success=True to signal
+        # operational follow-up (typically manual GCP cleanup).
         result = DeletionResult(
             paper_id=paper_id,
             paper_title=paper_title,
@@ -269,7 +274,7 @@ class PaperManager:
         self,
         session: AsyncSession,
         paper_id: uuid.UUID,
-    ) -> Optional[dict]:
+    ) -> dict[str, str | int | bool | None] | None:
         """
         Get paper metadata for display/confirmation before deletion.
 

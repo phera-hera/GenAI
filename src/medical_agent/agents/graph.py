@@ -6,6 +6,7 @@ Uses MemorySaver for multi-turn conversation memory.
 """
 
 import logging
+from typing import TYPE_CHECKING
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -15,8 +16,11 @@ from medical_agent.agents.state import MedicalAgentState
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from langgraph.graph.state import CompiledStateGraph
 
-def build_medical_rag_graph():
+
+def build_medical_rag_graph() -> "CompiledStateGraph":
     """
     Build and compile the medical RAG agent graph.
 

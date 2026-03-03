@@ -35,7 +35,7 @@ This platform takes pH values from test strip photos (provided by a separate CV 
 | Vector DB | pgvector (PostgreSQL) with hybrid search |
 | RAG System | LlamaIndex CitationQueryEngine |
 | RAG Framework | LlamaIndex |
-| Observability | Langfuse |
+| Observability | LangSmith |
 | Deployment | GCP Cloud Run |
 
 ## Quick Start
@@ -73,24 +73,19 @@ This platform takes pH values from test strip photos (provided by a separate CV 
    # Edit .env with your configuration
    ```
 
-5. **Start the database**
-   ```bash
-   docker-compose up -d postgres
-   ```
-
-6. **Run database migrations**
+5. **Run database migrations**
    ```bash
    alembic upgrade head
    ```
 
-7. **Start the development server**
+6. **Start the development server**
    ```bash
    uvicorn medical_agent.api.main:app --reload
    ```
 
-   Or with Docker:
+7. **Run the containerized API (optional)**
    ```bash
-   docker-compose up
+   docker-compose up -d app
    ```
 
 8. **Verify cloud services setup**
@@ -116,8 +111,7 @@ Medical_Agent/
 │       │   └── exceptions.py             # Custom exceptions
 │       │
 │       ├── infrastructure/               # External services & integrations
-│       │   ├── azure_openai.py          # Azure OpenAI client
-│       │   ├── langfuse_client.py       # Observability client
+│       │   ├── azure_openai.py           # Azure OpenAI client factories
 │       │   ├── gcp_storage.py           # GCP Cloud Storage client
 │       │   └── database/                # Database layer
 │       │       ├── models.py            # SQLAlchemy models
@@ -126,12 +120,15 @@ Medical_Agent/
 │       │
 │       ├── ingestion/                   # Document processing pipeline
 │       │   ├── pipeline.py              # LlamaIndex ingestion pipeline
-│       │   │                            # (Docling + HybridChunker + Metadata + Embeddings)
-│       │   └── metadata/                # Medical metadata extraction
+│       │   ├── metadata.py              # Medical metadata extraction
+│       │   ├── contextual_chunking.py   # Section-aware chunk headers
+│       │   └── table_transformer.py     # Table chunk normalization
 │       │
-│       ├── rag/                         # Medical RAG retrieval
-│       │   └── llamaindex_retrieval.py # LlamaIndex CitationQueryEngine
-│       │                                # (Direct retrieval with citations)
+│       ├── agents/                      # LangGraph medical RAG workflow
+│       │   ├── graph.py                 # Compiled workflow graph
+│       │   ├── nodes.py                 # Retrieval/rerank/generation nodes
+│       │   ├── llamaindex_retrieval.py  # Retriever + citation formatting
+│       │   └── state.py                 # Graph state schema
 │       │
 │       └── api/                         # Web layer (FastAPI)
 │           ├── main.py                  # Application entry point
@@ -140,6 +137,7 @@ Medical_Agent/
 │               ├── health.py            # Health check endpoints
 │               └── query.py             # pH analysis endpoint
 │
+├── streamlit_app.py                     # Streamlit demo client
 ├── tests/                               # Test suite
 ├── scripts/                             # CLI utilities
 ├── alembic/                             # Database migrations
@@ -155,15 +153,13 @@ Medical_Agent/
 
 The project follows clean architecture with clear separation of concerns:
 
-```
-api (FastAPI) → rag (CitationQueryEngine) → ingestion (LlamaIndex pipeline) → infrastructure → core
-```
+`api (FastAPI) -> agents (LangGraph workflow) -> llamaindex retrieval + reranking -> infrastructure/core`
 
 **Layer responsibilities:**
 - **api**: HTTP endpoints and request/response handling
-- **rag**: Medical research retrieval with LlamaIndex CitationQueryEngine
+- **agents**: Orchestration across query rewriting, retrieval, reranking, and response generation
 - **ingestion**: Document processing (Docling parsing, chunking, embeddings, metadata extraction)
-- **infrastructure**: External services (Azure OpenAI, GCP Storage, PostgreSQL, Langfuse)
+- **infrastructure**: External services (Azure OpenAI, GCP Storage, PostgreSQL)
 - **core**: Configuration and domain exceptions
 
 ## Risk Assessment Logic
@@ -199,8 +195,8 @@ from medical_agent.infrastructure.database.models import Paper, PaperChunk
 from medical_agent.ingestion.pipeline import MedicalIngestionPipeline, PipelineConfig
 from medical_agent.ingestion.metadata import MedicalMetadata, create_medical_metadata_extractor
 
-# RAG (LlamaIndex CitationQueryEngine)
-from medical_agent.rag import query_medical_rag, MedicalAnalysisResponse
+# Agent graph + retrieval helpers
+from medical_agent.agents import medical_rag_app, retrieve_nodes
 
 # API application
 from medical_agent.api.main import app
@@ -264,16 +260,103 @@ For detailed cloud infrastructure setup instructions, see:
 
 ## Environment Variables
 
-See `.env.example` for all available configuration options. Key variables:
+Copy `.env.example` to `.env`, then set these values.
+
+### Core Application
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `AZURE_OPENAI_API_KEY` | Azure OpenAI API key |
+| `ENVIRONMENT` | Runtime mode (`development`, `staging`, `production`) |
+| `DEBUG` | Enable debug behavior/logging |
+| `APP_NAME` | App display name |
+| `APP_VERSION` | App version string |
+| `HOST` | API bind host |
+| `PORT` | API bind port |
+
+### Database
+
+| Variable | Description |
+|----------|-------------|
+| `POSTGRES_USER` | PostgreSQL username |
+| `POSTGRES_PASSWORD` | PostgreSQL password |
+| `POSTGRES_DB` | PostgreSQL database name |
+| `POSTGRES_HOST` | PostgreSQL hostname |
+| `POSTGRES_PORT` | PostgreSQL port |
+| `DATABASE_URL` | Optional override for full DB URL (recommended in production) |
+
+### Azure OpenAI (LLM)
+
+| Variable | Description |
+|----------|-------------|
+| `AZURE_OPENAI_API_KEY` | API key for chat/completions model |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL |
-| `GCP_PROJECT_ID` | GCP project for Cloud Storage |
-| `GCP_BUCKET_NAME` | Cloud Storage bucket name |
-| `LANGFUSE_PUBLIC_KEY` | Langfuse observability key |
+| `AZURE_OPENAI_API_VERSION` | API version for chat/completions |
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | Main model deployment (for generation) |
+| `AZURE_OPENAI_MINI_DEPLOYMENT_NAME` | Smaller model deployment (query rewriting/helpers) |
+
+### Azure OpenAI (Embeddings)
+
+| Variable | Description |
+|----------|-------------|
+| `AZURE_OPENAI_EMBEDDING_API_KEY` | API key for embedding model (can match main key) |
+| `AZURE_OPENAI_EMBEDDING_ENDPOINT` | Endpoint for embedding model (can match main endpoint) |
+| `AZURE_OPENAI_EMBEDDING_API_VERSION` | API version for embedding model |
+| `AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME` | Embedding deployment name (`text-embedding-3-large`) |
+
+### GCP
+
+| Variable | Description |
+|----------|-------------|
+| `GCP_PROJECT_ID` | GCP project ID |
+| `GCP_BUCKET_NAME` | Cloud Storage bucket containing papers |
+| `GCP_CREDENTIALS_PATH` | Local path to service account JSON key |
+| `GCP_CLOUD_SQL_INSTANCE` | Cloud SQL instance name (`project:region:instance`) |
+
+### LangSmith (Optional Observability)
+
+| Variable | Description |
+|----------|-------------|
+| `LANGSMITH_API_KEY` | LangSmith API key |
+| `LANGSMITH_TRACING` | Enable LangSmith tracing |
+| `LANGSMITH_PROJECT` | LangSmith project name |
+
+### Retrieval + Medical Thresholds
+
+| Variable | Description |
+|----------|-------------|
+| `EMBEDDING_DIMENSION` | Embedding vector size (defaults to 3072) |
+| `VECTOR_SIMILARITY_TOP_K` | Number of retrieved chunks before downstream filtering |
+| `PH_NORMAL_MIN` | Lower bound for normal pH |
+| `PH_NORMAL_MAX` | Upper bound for normal pH |
+| `PH_CONCERNING_THRESHOLD` | Threshold for concerning/urgent risk logic |
+
+## Evaluation
+
+Install evaluation extras, generate a synthetic testset from ingested chunks, then run RAGAS scoring.
+
+```bash
+uv pip install -e ".[evaluation]"
+```
+
+### Generate testset
+
+```bash
+python -m medical_agent.evaluation.generate_testset --size 20 --limit 200
+```
+
+- Optional flags:
+  - `--paper "keyword"` limits chunks to papers matching title text
+  - `--seed 42` enables reproducible chunk ordering
+- Output: CSV written to `src/medical_agent/evaluation/testsets/`
+
+### Run evaluation
+
+```bash
+python -m medical_agent.evaluation.run_evaluation --testset src/medical_agent/evaluation/testsets/testset_<timestamp>.csv
+```
+
+- Required columns in testset CSV: `user_input`, `reference`
+- Output: JSON report written to `src/medical_agent/evaluation/results/`
 
 ## API Endpoints
 

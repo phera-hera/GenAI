@@ -1,7 +1,8 @@
 """Pydantic schemas for request/response validation."""
 
+from typing import Any, ClassVar
+
 from pydantic import BaseModel, Field
-from typing import Any
 
 
 class BirthControlInfo(BaseModel):
@@ -112,7 +113,7 @@ class QueryRequest(BaseModel):
     # Optional: Symptoms
     symptoms: SymptomsInfo | None = Field(None, description="Current symptoms")
 
-    model_config = {
+    model_config: ClassVar[dict[str, Any]] = {
         "json_schema_extra": {
             "examples": [
                 {
@@ -157,7 +158,7 @@ class QueryResponse(BaseModel):
     )
     processing_time_ms: int = Field(..., description="Processing time in milliseconds")
 
-    model_config = {
+    model_config: ClassVar[dict[str, Any]] = {
         "json_schema_extra": {
             "examples": [
                 {

@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 class IngestionProgress:
     """Track progress of batch ingestion."""
 
-    def __init__(self, total: int):
+    def __init__(self, total: int) -> None:
         self.total = total
         self.completed = 0
         self.succeeded = 0
@@ -87,7 +87,7 @@ class IngestionProgress:
         print("=" * 60)
 
 
-async def check_azure_connectivity():
+async def check_azure_connectivity() -> bool:
     """Test Azure OpenAI connectivity."""
     logger.info("Testing Azure OpenAI connectivity...")
     try:
@@ -249,7 +249,7 @@ def parse_selected_ids(input_str: str, max_index: int) -> list[int]:
         return []
 
 
-async def interactive_mode():
+async def interactive_mode() -> None:
     """Interactive mode for ingesting papers."""
     print("\n" + "=" * 80)
     print("PAPER INGESTION - INTERACTIVE MODE")
@@ -416,7 +416,7 @@ async def interactive_mode():
             print("Invalid choice. Please try again.")
 
 
-def main():
+def main() -> None:
     try:
         asyncio.run(interactive_mode())
     except KeyboardInterrupt:

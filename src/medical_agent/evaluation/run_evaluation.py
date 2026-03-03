@@ -268,6 +268,11 @@ async def run_evaluation(
 
 
 def main() -> None:
+    """Run the evaluation CLI against a testset CSV and write JSON results.
+
+    `--testset` is required and may be absolute or relative. Relative paths are
+    resolved against the evaluation package directory when needed.
+    """
     import argparse
 
     parser = argparse.ArgumentParser(description="Run RAGAS evaluation on medical RAG pipeline")

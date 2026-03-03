@@ -199,6 +199,8 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
             health_profile["age"] = request.age
 
         # Collect symptoms
+        # Keep a flat symptom list for prompt conditioning while preserving
+        # source grouping in the request model for validation/UI concerns.
         symptoms = []
         if request.symptoms:
             symptoms.extend(request.symptoms.discharge or [])
@@ -221,25 +223,27 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
             health_profile["menstrual_cycle"] = request.menstrual_cycle
 
         # Birth control
-        bc_list = []
+        # Normalize multiple form sections into one retrieval-friendly feature.
+        birth_control_methods = []
         if request.birth_control:
             if request.birth_control.general:
-                bc_list.append(request.birth_control.general)
+                birth_control_methods.append(request.birth_control.general)
             if request.birth_control.pill:
-                bc_list.append(request.birth_control.pill)
+                birth_control_methods.append(request.birth_control.pill)
             if request.birth_control.iud:
-                bc_list.append(request.birth_control.iud)
-            bc_list.extend(request.birth_control.other_methods or [])
-            bc_list.extend(request.birth_control.permanent or [])
-        if bc_list:
-            health_profile["birth_control"] = bc_list
+                birth_control_methods.append(request.birth_control.iud)
+            birth_control_methods.extend(request.birth_control.other_methods or [])
+            birth_control_methods.extend(request.birth_control.permanent or [])
+        if birth_control_methods:
+            health_profile["birth_control"] = birth_control_methods
 
         # Hormone therapy
-        hrt_list = []
-        hrt_list.extend(request.hormone_therapy or [])
-        hrt_list.extend(request.hrt or [])
-        if hrt_list:
-            health_profile["hormone_therapy"] = hrt_list
+        # Accept both legacy (`hrt`) and newer (`hormone_therapy`) fields.
+        hormone_therapy_entries = []
+        hormone_therapy_entries.extend(request.hormone_therapy or [])
+        hormone_therapy_entries.extend(request.hrt or [])
+        if hormone_therapy_entries:
+            health_profile["hormone_therapy"] = hormone_therapy_entries
 
         # Fertility journey
         if request.fertility_journey:
@@ -253,6 +257,8 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
         logger.info(f"Health profile: age={health_profile.get('age')}, symptoms={len(symptoms)}")
 
         # Use provided session_id or generate new one
+        # Reusing thread_id is what gives LangGraph memory continuity
+        # across follow-up API calls.
         session_id = request.session_id if request.session_id else str(uuid.uuid4())
         logger.info(f"Session ID: {session_id}")
 
@@ -279,6 +285,8 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
                 )
 
             except Exception as e:
+                # Follow-ups should still work even if memory lookup fails;
+                # degrade gracefully to raw user text instead of hard-failing.
                 logger.warning(f"Failed to load conversation history: {e}. Using raw query.")
                 query_text = request.user_message
 
@@ -302,19 +310,19 @@ async def analyze_ph(request: QueryRequest) -> QueryResponse:
         # Run LangGraph workflow with session continuity
         logger.info(f"Invoking medical RAG graph for session: {session_id}")
 
-        result = medical_rag_app.invoke(
+        graph_result = medical_rag_app.invoke(
             initial_state,
             config={"configurable": {"thread_id": session_id}}
         )
 
-        # Extract response from result
-        assistant_message = result["messages"][-1]
+        # Extract response from graph output payload
+        assistant_message = graph_result["messages"][-1]
         agent_reply = assistant_message.get("content", "") if isinstance(assistant_message, dict) else getattr(assistant_message, "content", "")
 
         # Pass ALL citations through with their original numbering so
         # [3] in the LLM response text maps to citations[2] (index 2 = id 3).
-        raw_citations = result.get("citations", [])
-        used_citation_ids = set(result.get("used_citations", []))
+        raw_citations = graph_result.get("citations", [])
+        used_citation_ids = set(graph_result.get("used_citations", []))
 
         citations = []
         for c in raw_citations:

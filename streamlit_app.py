@@ -163,6 +163,20 @@ def call_medical_rag_api(
     user_message: str | None = None,
     session_id: str | None = None,
 ) -> dict[str, Any] | None:
+    """Send a query payload to the Medical RAG API and return JSON response.
+
+    The payload always includes `ph_value` and a normalized `health_profile`
+    structure. For follow-up chat turns, `user_message` and `session_id` are
+    forwarded so the API can use conversation memory.
+
+    Returns:
+        Parsed JSON body when the request succeeds.
+        None when the API is unreachable, times out, or raises an exception.
+
+    Notes:
+        Uses a 30-second request timeout and surfaces failures through Streamlit
+        error banners before returning None.
+    """
     try:
         payload = {
             "ph_value": ph_value,
@@ -242,7 +256,18 @@ def _ph_badge(ph: float) -> str:
 
 
 # ── Page 1: Form ──
-def show_form_page():
+def show_form_page() -> None:
+    """Render and handle the initial health profile + pH intake form.
+
+    On successful submission, this function:
+    - normalizes nested profile fields (birth control, fertility, symptoms),
+    - calls the backend API for the first analysis response,
+    - writes session-state keys consumed by chat mode, and
+    - switches `st.session_state.page` to `"chat"` followed by `st.rerun()`.
+
+    The rerun is intentional: Streamlit restarts the script so the chat page can
+    render using freshly populated session state in the same user interaction.
+    """
     st.markdown(
         '<div class="app-header"><h1>pHera</h1>'
         '<p>Evidence-based vaginal pH analysis</p></div>',
@@ -489,7 +514,7 @@ def show_form_page():
 
 
 # ── Page 2: Chat ──
-def _render_sidebar():
+def _render_sidebar() -> None:
     """Render sidebar with pH badge, profile summary, and controls."""
     with st.sidebar:
         if st.session_state.ph_value is not None:
@@ -576,7 +601,18 @@ def _render_message(content: str, citations: list, show_disclaimer: bool = False
         st.caption(disclaimers)
 
 
-def show_chat_page():
+def show_chat_page() -> None:
+    """Render the conversational follow-up page after initial analysis.
+
+    This view replays chat history, renders assistant citations as inline hover
+    markers, and only shows disclaimers on the most recent assistant message.
+    For follow-up questions, it forwards the saved `session_id` and profile
+    context to preserve multi-turn continuity with the API.
+
+    A successful follow-up appends both user and assistant messages to
+    `st.session_state.chat_history` and triggers `st.rerun()` so the transcript
+    and disclaimer state stay consistent after the request completes.
+    """
     _render_sidebar()
 
     for idx, msg in enumerate(st.session_state.chat_history):
@@ -621,7 +657,7 @@ def show_chat_page():
             st.rerun()
 
 
-def main():
+def main() -> None:
     if st.session_state.page == "form":
         show_form_page()
     else:

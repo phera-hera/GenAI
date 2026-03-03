@@ -138,7 +138,7 @@ class MedicalIngestionPipeline:
     def __init__(
         self,
         config: PipelineConfig | None = None,
-    ):
+    ) -> None:
         self.config = config or PipelineConfig()
 
         # Initialize native PGVectorStore with hybrid search support
@@ -315,6 +315,8 @@ class MedicalIngestionPipeline:
 
                 # Step 2.3: Extract metadata from RAW chunks (before filtering)
                 # Uses title + abstract/intro for unique per-paper metadata
+                # Keep this before filtering/context transforms so extraction sees
+                # the highest-fidelity source text from the original parse.
                 logger.info("Step 2/7: Extracting medical metadata from document...")
                 medical_metadata = await extract_medical_metadata(
                     title=result.paper_title, nodes=nodes
@@ -337,6 +339,8 @@ class MedicalIngestionPipeline:
                 logger.info(f"✓ Context added: {len(nodes)} chunks")
 
                 # Step 2.7: Stamp metadata on processed chunks
+                # Stamp after all structural transforms so every persisted node
+                # carries a consistent, final metadata payload.
                 logger.info("Step 6/7: Stamping metadata on chunks...")
                 nodes = stamp_metadata_on_nodes(nodes, medical_metadata)
                 logger.info(f"✓ Metadata stamped on {len(nodes)} chunks")
@@ -395,7 +399,8 @@ class MedicalIngestionPipeline:
             except Exception as e:
                 logger.error(f"Storage failed: {e}", exc_info=True)
                 result.errors.append(f"Store error: {e}")
-                # Rollback to undo the flushed Paper record
+                # Keep storage atomic: undo the inserted Paper row if vector-store
+                # add fails, so we do not leave a "processed" paper without chunks.
                 await session.rollback()
                 return result
             finally:

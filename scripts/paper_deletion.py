@@ -22,7 +22,7 @@ from medical_agent.core.paper_manager import PaperManager, delete_paper_by_id, d
 from medical_agent.infrastructure.database.session import get_session_context
 
 
-async def list_all_papers():
+async def list_all_papers() -> list[dict]:
     """List all papers in the database and return the list."""
     print("\n" + "=" * 80)
     print("LISTING ALL PAPERS")
@@ -48,7 +48,7 @@ async def list_all_papers():
         return papers
 
 
-async def get_paper_details(paper_id: str):
+async def get_paper_details(paper_id: str) -> dict | None:
     """Get detailed information about a specific paper."""
     print("\n" + "=" * 80)
     print(f"PAPER DETAILS FOR ID: {paper_id}")
@@ -75,7 +75,7 @@ async def get_paper_details(paper_id: str):
         return paper_info
 
 
-async def delete_paper_example(paper_id: str, delete_from_gcp: bool = True):
+async def delete_paper_example(paper_id: str, delete_from_gcp: bool = True) -> None:
     """
     Example: Delete a paper by ID.
 
@@ -140,7 +140,7 @@ async def delete_paper_example(paper_id: str, delete_from_gcp: bool = True):
         traceback.print_exc()
 
 
-async def delete_all_papers_example():
+async def delete_all_papers_example() -> None:
     """
     Delete all papers from the database and GCP storage.
     Requires double confirmation for safety.
@@ -222,7 +222,7 @@ def parse_selected_indices(input_str: str, max_index: int) -> list[int]:
         return []
 
 
-async def interactive_mode():
+async def interactive_mode() -> None:
     """Interactive mode for paper deletion."""
     print("\n" + "=" * 80)
     print("PAPER DELETION - INTERACTIVE MODE")
@@ -353,7 +353,7 @@ async def interactive_mode():
             print("\nInvalid choice. Please try again.")
 
 
-async def main():
+async def main() -> None:
     """Main entry point."""
     try:
         await interactive_mode()

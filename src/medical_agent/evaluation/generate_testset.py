@@ -13,6 +13,7 @@ import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from langchain_core.documents import Document as LangchainDocument
 from sqlalchemy import text
@@ -101,8 +102,17 @@ async def fetch_chunks_as_langchain_docs(
     return documents
 
 
-def _build_query_distribution(llm, llm_context: str | None = None):
-    """Build 80% single-hop / 20% multi-hop query distribution."""
+def _build_query_distribution(
+    llm: Any,
+    llm_context: str | None = None,
+) -> list[tuple[Any, float]]:
+    """Build weighted RAGAS query synthesizer distribution for test generation.
+
+    Returns an 80/20 split between single-hop and multi-hop styles:
+    - 80% single-hop specific questions
+    - 10% multi-hop abstract questions
+    - 10% multi-hop specific questions
+    """
     from ragas.testset.synthesizers import (
         MultiHopAbstractQuerySynthesizer,
         MultiHopSpecificQuerySynthesizer,
@@ -187,6 +197,12 @@ async def generate_testset(
 
 
 def main() -> None:
+    """Run the testset-generation CLI and persist a timestamped CSV artifact.
+
+    Required input is provided via flags (no positional args). `--size` and
+    `--limit` control generation volume, while `--paper` and `--seed` are
+    optional filters for targeted and reproducible runs.
+    """
     import argparse
 
     parser = argparse.ArgumentParser(description="Generate RAGAS synthetic test set")

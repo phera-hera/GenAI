@@ -62,7 +62,7 @@ def check_env_file() -> bool:
     return True
 
 
-def check_gcp_configuration() -> dict:
+def check_gcp_configuration() -> dict[str, bool]:
     """Check GCP configuration and connectivity."""
     print_section("GCP Cloud Storage")
     
@@ -102,7 +102,7 @@ def check_gcp_configuration() -> dict:
     return results
 
 
-def check_azure_openai_configuration() -> dict:
+def check_azure_openai_configuration() -> dict[str, bool]:
     """Check Azure OpenAI configuration and connectivity."""
     print_section("Azure OpenAI")
 
@@ -163,7 +163,7 @@ def check_azure_openai_configuration() -> dict:
     return results
 
 
-def check_langsmith_configuration() -> dict:
+def check_langsmith_configuration() -> dict[str, bool]:
     """Check LangSmith configuration and connectivity."""
     print_section("LangSmith Observability (Optional)")
 
@@ -190,7 +190,7 @@ def check_langsmith_configuration() -> dict:
     return results
 
 
-def check_database_configuration() -> dict:
+def check_database_configuration() -> dict[str, bool]:
     """Check PostgreSQL database configuration."""
     print_section("PostgreSQL + pgvector")
     
@@ -211,7 +211,7 @@ def check_database_configuration() -> dict:
             from sqlalchemy import text
             from sqlalchemy.ext.asyncio import create_async_engine
             
-            async def test_connection():
+            async def test_connection() -> bool:
                 engine = create_async_engine(
                     settings.database_connection_string,
                     echo=False,
@@ -429,7 +429,7 @@ def check_all() -> bool:
     return all_passed
 
 
-def main():
+def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(
         description="Infrastructure setup and verification for FemTech Medical RAG Agent"
