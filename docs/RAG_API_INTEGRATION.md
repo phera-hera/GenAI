@@ -1,316 +1,205 @@
+---
+
 # RAG API Integration Guide
 
-Integration spec for the FemTech Medical RAG service (pH analysis). Use this for BFF orchestration.
+Integration reference for the Phera Medical RAG service (pH analysis). Use this for BFF orchestration.
+
+The RAG backend serves two separate products from two separate deployed instances. Both call the same endpoint with the same request schema. The difference is in the headers you send and which instance you point to.
 
 ---
 
-## 1. Two Products, One Backend
+## Project 1 - Beta (Personalization Test App)
 
-The RAG backend serves two separate products. The core pH analysis logic is identical for both — the only difference is what data gets saved afterward.
+### Overview
 
-**Beta** — Internal product used by our team and scientists for testing and evaluation. There is no authentication. No user data is stored. Anonymous query logs are saved for debugging purposes only.
+Internal tool for Phera's researchers to evaluate RAG response quality. No authentication. No user accounts. Anonymous query logs saved for debugging only.
 
-**MVP** — User-facing product. Has authentication via Zitadel. Users can use the app with or without logging in. Data is only saved for users who are logged in.
+### Headers
 
-Both products call the same API endpoint (`POST /api/v1/query`) with the same request body. The backend decides what to save based on which product is calling and whether the user is authenticated.
+| Header | Value |
+|---|---|
+| `Content-Type` | `application/json` |
 
----
+Do not send `X-API-Key` or `X-User-Id` for this product.
 
-## 2. Data Persistence Rules
-
-| Product | Auth status | What gets saved |
-|---------|-------------|-----------------|
-| Beta | No auth (always) | Anonymous query logs only (pH value, query, response, citations, timing). No user identity attached. |
-| MVP | Not logged in | Nothing saved. |
-| MVP | Logged in | Everything saved — query log (linked to user), user record, health profile. |
-
-**Health profile auto-load:** For logged-in MVP users, if they submit health data (age, diagnoses, symptoms, etc.) in a request, it gets saved to their profile. On their next request, if they don't submit health data, the backend automatically loads their previously saved profile and uses it for the analysis. This means the BFF can omit health fields on repeat queries for logged-in users.
-
----
-
-## 3. Authentication Flow
-
-Authentication only applies to the MVP product. Beta has no authentication at all.
+### Base URL
 
 ```
-MVP flow (logged-in user):
-
-  Mobile App → user logs in via Zitadel → gets JWT token
-       │
-       ▼
-  BFF receives request with JWT token
-       │
-       ▼
-  BFF forwards request to RAG API
-  with header: Authorization: Bearer <token>
-       │
-       ▼
-  RAG API validates the token against Zitadel
-       │
-       ├── Token valid → identify user, run analysis, save data
-       └── Token missing/invalid → run analysis, save nothing
+TBD - provided after deployment
 ```
 
-**How user identification works on the backend:**
-1. RAG API validates the JWT and extracts the `sub` claim (Zitadel's unique user ID)
-2. Looks up the user in our database by this external ID
-3. If the user exists → use their record
-4. If the user does not exist → create a new user record (first login)
-5. All saved data (query logs, health profile) is linked to this internal user record
+### Endpoint
 
-**What the BFF needs to do:**
-- For MVP: forward the user's Zitadel JWT as `Authorization: Bearer <token>` header when calling the RAG API. If the user is not logged in, simply don't send the header.
-- For Beta: don't send any Authorization header.
-
----
-
-## 4. Deployment
-
-The same Docker image is deployed twice on GCP Cloud Run — one instance for each product. The only difference is configuration.
-
-| Instance | `DEPLOYMENT_MODE` env var | Auth required |
-|----------|--------------------------|---------------|
-| Beta service | `beta` | No |
-| MVP service | `mvp` | Optional (logged-in users get persistence) |
-
-Each instance will have its own base URL. The BFF should point to the correct URL depending on which product it is serving.
-
-### URLs — Will Change After Deployment
-
-| Item | Local (current) | Post-deployment |
-|------|-----------------|-----------------|
-| Base URL | `http://localhost:8000` | TBD (e.g. `https://phera-beta.run.app`, `https://phera-mvp.run.app`) |
-| OpenAPI docs | `http://localhost:8000/docs` | TBD (may be restricted in production) |
-| OpenAPI JSON | `http://localhost:8000/openapi.json` | TBD |
-
-**Action:** Use local values for now. Production URLs will be shared once deployment is done (target: next week).
-
----
-
-## 5. API Reference
-
-These remain the same regardless of deployment or product.
-
-### Base path
-
-- `/api/v1`
-
-### Main endpoint
-
-- Method: `POST`
-- Path: `/api/v1/query`
-- Content-Type: `application/json`
-
-### Request headers
-
-| Header | Required | Description |
-|--------|----------|-------------|
-| `Content-Type` | Yes | `application/json` |
-| `Authorization` | No (MVP only) | `Bearer <zitadel_jwt_token>`. If present and valid, user data is persisted. If absent, API still works but nothing is saved. Not used for Beta. |
-
-### Request body
-
-**Required:**
-
-| Field | Type | Constraints |
-|-------|------|-------------|
-| `ph_value` | float | 0.0–14.0 |
-
-**Optional (all fields can be omitted):**
-
-| Field | Type | Constraints / Notes |
-|-------|------|----------------------|
-| `age` | int | 0–120 |
-| `diagnoses` | string[] | e.g. PCOS, Endometriosis, Diabetes |
-| `ethnic_backgrounds` | string[] | |
-| `menstrual_cycle` | string | Regular, Irregular, Perimenopausal, Postmenopausal, etc. |
-| `birth_control` | object | `general`, `pill`, `iud`, `other_methods`, `permanent` |
-| `hormone_therapy` | string[] | |
-| `hrt` | string[] | |
-| `fertility_journey` | object | `current_status`, `fertility_treatments` |
-| `symptoms` | object | `discharge`, `vulva_vagina`, `smell`, `urine`, `notes` |
-
-**Note:** `user_message` and `session_id` fields exist in the schema but are not currently used. Do not send them.
-
-### Response schema (200 OK)
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `session_id` | string | Session identifier |
-| `ph_value` | float | Analyzed pH value |
-| `agent_reply` | string | Full analysis text |
-| `disclaimers` | string | Medical disclaimer text |
-| `citations` | array | See below |
-| `processing_time_ms` | int | Processing time in milliseconds |
-
-**Citation object:**
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `paper_id` | string | Internal ID |
-| `title` | string \| null | Paper title |
-| `authors` | string \| null | Often null |
-| `doi` | string \| null | Often null |
-| `relevant_section` | string \| null | Relevant excerpt |
-
-### Error responses
-
-| Status | Body |
-|--------|------|
-| 500 | `{"error": "PROCESSING_ERROR", "message": "..."}` |
-| 503 | `{"error": "SERVICE_NOT_CONFIGURED", "message": "Azure OpenAI is not configured..."}` |
-
-### Health endpoints
-
-- `GET /health` — basic health
-- `GET /health/ready` — readiness probe
-- `GET /health/live` — liveness probe
-
----
-
-## 6. Examples
-
-The request body is identical for both products. The only difference is whether the `Authorization` header is included.
-
-### Request without auth (Beta, or MVP unauthenticated user)
-
-```bash
-curl -X POST http://localhost:8000/api/v1/query \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ph_value": 4.8,
-    "age": 28,
-    "diagnoses": ["PCOS", "Endometriosis"],
-    "ethnic_backgrounds": ["South Asian"],
-    "menstrual_cycle": "Irregular",
-    "birth_control": {
-      "general": null,
-      "pill": "Combined pill",
-      "iud": null,
-      "other_methods": [],
-      "permanent": []
-    },
-    "hormone_therapy": [],
-    "hrt": [],
-    "fertility_journey": null,
-    "symptoms": {
-      "discharge": ["Creamy"],
-      "vulva_vagina": ["Itchy"],
-      "smell": [],
-      "urine": [],
-      "notes": "Some notes"
-    }
-  }'
+```
+POST /api/v1/query
 ```
 
-### Request with auth (MVP logged-in user)
-
-Same request body, with the `Authorization` header added:
-
-```bash
-curl -X POST http://localhost:8000/api/v1/query \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIs..." \
-  -d '{
-    "ph_value": 4.8,
-    "age": 28,
-    "diagnoses": ["PCOS", "Endometriosis"],
-    "ethnic_backgrounds": ["South Asian"],
-    "menstrual_cycle": "Irregular",
-    "birth_control": {
-      "general": null,
-      "pill": "Combined pill",
-      "iud": null,
-      "other_methods": [],
-      "permanent": []
-    },
-    "hormone_therapy": [],
-    "hrt": [],
-    "fertility_journey": null,
-    "symptoms": {
-      "discharge": ["Creamy"],
-      "vulva_vagina": ["Itchy"],
-      "smell": [],
-      "urine": [],
-      "notes": "Some notes"
-    }
-  }'
-```
-
-### Success response (200)
-
-The response is the same regardless of auth status:
+### Request Body
 
 ```json
 {
-  "session_id": "abc-123",
   "ph_value": 4.8,
-  "agent_reply": "Your pH reading of 4.8 is slightly elevated...",
-  "disclaimers": "This analysis is for informational purposes only...",
-  "citations": [
-    {
-      "paper_id": "node_xyz",
-      "title": "Vaginal pH and Microbiome",
-      "authors": null,
-      "doi": null,
-      "relevant_section": "Excerpt..."
-    }
-  ],
-  "processing_time_ms": 1500
+  "age": 28,
+  "diagnoses": ["PCOS", "Endometriosis"],
+  "ethnic_backgrounds": ["South Asian"],
+  "menstrual_cycle": "Irregular",
+  "birth_control": {
+    "general": null,
+    "pill": "Combined pill",
+    "iud": null,
+    "other_methods": [],
+    "permanent": []
+  },
+  "hormone_therapy": [],
+  "hrt": [],
+  "fertility_journey": {
+    "current_status": null,
+    "fertility_treatments": []
+  },
+  "symptoms": {
+    "discharge": ["Creamy"],
+    "vulva_vagina": ["Itchy"],
+    "smell": [],
+    "urine": [],
+    "notes": "Some notes"
+  }
 }
 ```
 
+**Field reference:**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `ph_value` | float | Yes | Range 0.0-14.0 |
+| `age` | int | No | Range 0-120 |
+| `diagnoses` | string[] | No | e.g. PCOS, Endometriosis, Diabetes |
+| `ethnic_backgrounds` | string[] | No | |
+| `menstrual_cycle` | string | No | Regular, Irregular, Perimenopausal, Postmenopausal |
+| `birth_control` | object | No | `general`, `pill`, `iud`, `other_methods[]`, `permanent[]` |
+| `hormone_therapy` | string[] | No | |
+| `hrt` | string[] | No | |
+| `fertility_journey` | object | No | `current_status`, `fertility_treatments[]` |
+| `symptoms` | object | No | `discharge[]`, `vulva_vagina[]`, `smell[]`, `urine[]`, `notes` |
+
+### Response (200 OK)
+
+```json
+{
+  "session_id": "9d1be1ac-8f12-4f5e-83f8-936af95a8d4f",
+  "ph_value": 4.8,
+  "agent_reply": "Your vaginal pH of 4.8 is slightly elevated...",
+  "disclaimers": "This analysis is for informational purposes only...",
+  "citations": [
+    {
+      "paper_id": "7d4f22ce-3f9d-4f3e-b36a-617aa0246e07",
+      "title": "Vaginal Microbiome and pH Dynamics in Reproductive-Age Women",
+      "authors": null,
+      "doi": null,
+      "relevant_section": "Participants with pH > 4.5 showed lower Lactobacillus dominance..."
+    }
+  ],
+  "processing_time_ms": 1842
+}
+```
+
+> Display `agent_reply` and `citations[]` in the frontend. The medical disclaimer is embedded within `agent_reply`.
+
+### Data Saved
+
+Anonymous `QueryLog` row only - pH value, generated query, response, citations, timing. `user_id = null`. No user identity attached.
+
 ---
 
-## 7. Summary
+## Project 2 - MVP (User-Facing Product)
 
-| Category | Contents |
-|----------|----------|
-| Products | Beta (internal, no auth, anonymous logs only) and MVP (user-facing, auth-gated persistence) |
-| Variable | Base URLs — will update after deployment (two separate URLs, one per product) |
-| Constant | Endpoint path, request/response schemas, error format, health endpoints |
-| Auth | MVP only. BFF forwards Zitadel JWT as `Authorization: Bearer <token>`. Backend validates and decides persistence. |
-| Health profile | Saved on submit for logged-in MVP users. Auto-loaded on next request if health fields are omitted. |
+### Overview
+
+User-facing Phera product. Users can be logged in (full persistence) or anonymous (anonymous query log only). The BFF handles all JWT validation - the RAG backend never sees or validates a JWT. The BFF extracts the user ID from the token and passes it directly as a header.
+
+### Authentication Flow
+
+```
+User logs in -> Zitadel issues JWT
+     |
+     v
+BFF receives request with JWT
+BFF validates JWT against Zitadel
+BFF extracts user ID (sub claim)
+     |
+     v
+BFF calls RAG Backend with:
+  X-API-Key: <secret>
+  X-User-Id: <zitadel_user_id>   <- only if user is logged in
+
+RAG Backend:
+  -> Validates X-API-Key
+  -> Reads X-User-Id (present = logged in, absent = anonymous)
+  -> Runs analysis
+  -> Persists data based on presence of X-User-Id
+```
+
+### Headers
+
+| Header | Required | Description |
+|---|---|---|
+| `Content-Type` | Yes | `application/json` |
+| `X-API-Key` | Yes | Service-to-service auth. Provided after deployment. |
+| `X-User-Id` | No | Zitadel `sub` claim. Send only when user is logged in. |
+
+### Base URL
+
+```
+TBD - provided after deployment
+```
+
+### Endpoint
+
+```
+POST /api/v1/query
+```
+
+### Request Body
+
+Same schema as Project 1. See field reference above.
+
+### Response (200 OK)
+
+Same structure as Project 1.
+
+### Data Persistence
+
+| Scenario | What RAG saves |
+|---|---|
+| `X-User-Id` present (logged in) | QueryLog linked to user + HealthProfile saved/updated |
+| `X-User-Id` absent (anonymous) | Anonymous QueryLog only (`user_id = null`) |
+
+> All persistence is handled internally by the RAG backend. The BFF does not need to manage or track any of this.
 
 ---
 
-## 8. Questions for Johannes — Zitadel Integration
+## Shared Reference
 
-Hi Johannes! We're adding authentication-based data persistence to the RAG backend. When a user is logged in (MVP product), we want to save their query history and health profile. When they're not logged in or on the beta product, we don't save anything (or save only anonymous debug logs).
+### Error Responses
 
-To wire this up on the backend, we need a few details about how Zitadel is set up:
+| Status | Body |
+|---|---|
+| `401` | `{"error": "UNAUTHORIZED", "message": "Invalid or missing API key"}` |
+| `500` | `{"error": "PROCESSING_ERROR", "message": "Failed to process query: <detail>"}` |
+| `503` | `{"error": "SERVICE_NOT_CONFIGURED", "message": "Azure OpenAI is not configured..."}` |
 
-### Q1. How should we validate tokens?
+### Health Endpoints
 
-When the BFF sends the user's Zitadel token to the RAG API, we need to verify it's real and not expired. There are two common ways:
+```
+GET /health        - basic health check
+GET /health/ready  - readiness probe
+GET /health/live   - liveness probe
+```
 
-- **Option A — Local validation:** We download Zitadel's public keys (from a JWKS endpoint) and verify the token ourselves. Fast, no network call per request.
-- **Option B — Introspection:** We call a Zitadel endpoint on every request and ask "is this token valid?" Slower, but always real-time.
+### Deployment
 
-Which approach are you using or expecting us to use?
+| Instance | DEPLOYMENT_MODE | Swagger Docs | Base URL |
+|---|---|---|---|
+| Beta | `beta` | Enabled | TBD |
+| MVP | `mvp` | Disabled in production | TBD |
 
-### Q2. What is the Zitadel issuer URL?
-
-The domain / URL where Zitadel is hosted. Something like `https://our-org.zitadel.cloud` or a self-hosted URL. We need this to verify tokens came from the right place.
-
-### Q3. What is the audience (`aud`) value?
-
-When Zitadel issues a token, it includes an `aud` (audience) field that says which application the token is meant for. What value should we expect here for our backend API?
-
-### Q4. What user information is inside the token?
-
-Specifically:
-- Is `sub` (subject) the unique user identifier? Or does Zitadel use a different field?
-- Is the user's `email` included in the token?
-- Are there any custom claims (like user roles)?
-
-### Q5. Have you already written any token validation code?
-
-If you've already built a middleware, helper function, or validation logic (even in another service or language), could you share it? We want to stay consistent rather than build something separate.
-
-### Q6. How does the BFF currently handle the token?
-
-When a logged-in user makes a request from the mobile app:
-- Does the BFF receive the Zitadel JWT in the request?
-- Will the BFF forward that token to the RAG API as an `Authorization: Bearer <token>` header?
-- Or should the RAG API validate tokens differently?
+---
