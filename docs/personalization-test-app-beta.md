@@ -2,26 +2,26 @@
 
 ## Overview
 
-The Personalization Test App is an internal tool built for Phera's researchers. Its sole purpose is to evaluate the quality of the RAG backend's personalization engine - specifically, whether responses meaningfully adapt based on a user's health profile, demographics, and symptoms.
+The Personalization Test App is an internal tool built for Phera's researchers. Its sole purpose is to evaluate the quality of the AI backend's personalization engine - specifically, whether responses meaningfully adapt based on a user's health profile, demographics, and symptoms.
 
 This is not a user-facing product. It is a controlled evaluation environment where researchers submit test cases and judge response quality by reading the output. There is no rating system, no feedback loop, and no user accounts. It is designed for internal evaluation only.
 
 ## Purpose
 
-The core question this app answers is: *does the RAG backend actually personalize?*
+The core question this app answers is: *does the AI backend actually personalize results accurately?*
 
-A researcher observes a randomly generated pH value, fills in a health profile (age, diagnoses, symptoms, ethnic background, etc.), submits, and reads the response. They evaluate whether the response made sense for that specific profile - whether it acknowledged relevant conditions, cited appropriate research, and gave contextually accurate insights. This is done externally and manually, not inside the app.
+A researcher observes a randomly generated pH value, fills in a health profile (age, diagnoses, symptoms, ethnic background, etc.), submits, and reads the response. They evaluate whether the response made sense for that specific profile - whether it acknowledged relevant conditions, cited appropriate research, and gave contextually accurate insights. This is done externally and manually, not inside the app. The app also allows researchers to export results in PDF, JSON, and CSV formats.
 
 Over time, this tool helps the team understand:
 
-- Where the RAG responses are strong
+- Where the AI responses are strong
 - Where personalization is missing or generic
 - Which health profiles produce unexpected results
 - Whether newly ingested research papers improve response quality
 
 ## Who Uses It
 
-- Researchers evaluating RAG response quality
+- Researchers evaluating AI response quality
 - Phera internal team only - URL is not shared publicly
 
 ## End-to-End Flow
@@ -40,10 +40,10 @@ Frontend
   v
 BFF - Beta Mode
   |  No authentication
-  |  Forwards request as-is to RAG backend
+  |  Forwards request as-is to AI backend
   |
   v
-RAG Backend - Beta Instance
+AI Backend - Beta Instance
   |
   |-- Builds health profile from submitted form fields
   |
@@ -84,7 +84,7 @@ Researcher reads the response and evaluates quality
 
 ## Data Storage
 
-All data storage is handled entirely on the RAG backend side. The frontend and BFF store nothing.
+All data storage is handled entirely on the AI backend side. The frontend and BFF store nothing.
 
 | What | Stored | Details |
 |---|---|---|
@@ -105,8 +105,8 @@ All data storage is handled entirely on the RAG backend side. The frontend and B
 - Run in `beta` mode for this product
 - No `Authorization` header - do not send one
 - No `X-User-Id` header - do not send one
-- Forward the request body as-is to the RAG backend
-- RAG base URL will be provided after deployment
+- Forward the request body as-is to the AI backend
+- AI base URL will be provided after deployment
 
 **Frontend:**
 
@@ -125,9 +125,9 @@ All data storage is handled entirely on the RAG backend side. The frontend and B
 - Deployed as a separate GCP Cloud Run instance
 - `DEPLOYMENT_MODE=beta` environment variable
 - Same Docker image as the MVP instance - only configuration differs
-- Base URL: TBD - shared after deployment
+- Base URL: https://phera-rag-beta-52458262724.europe-west10.run.app
 
-## Technical Stack (RAG Backend)
+## Technical Stack (AI Backend)
 
 | Component | Technology |
 |---|---|

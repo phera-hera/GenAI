@@ -68,14 +68,16 @@ def build_retriever(similarity_top_k: int = 5) -> "BaseRetriever":
         api_version=embed_api_version,
     )
 
+    # Build psycopg2-compatible connection string for Cloud SQL socket support
+    connection_string = (
+        settings.database_connection_string
+        .replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+    )
+
     # Connect to vector store
     vector_store = PGVectorStore.from_params(
-        database=settings.postgres_db,
-        host=settings.postgres_host,
-        password=settings.postgres_password,
-        port=settings.postgres_port,
-        user=settings.postgres_user,
-        table_name="paper_chunks",  # LlamaIndex adds "data_" prefix
+        connection_string=connection_string,
+        table_name="paper_chunks",
         embed_dim=settings.embedding_dimension,
         hybrid_search=True,
         text_search_config="english",

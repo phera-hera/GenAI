@@ -1,10 +1,10 @@
 ---
 
-# RAG API Integration Guide
+# AI API Integration Guide
 
-Integration reference for the Phera Medical RAG service (pH analysis). Use this for BFF orchestration.
+Integration reference for the Phera Medical AI service (pH analysis). Use this for BFF orchestration.
 
-The RAG backend serves two separate products from two separate deployed instances. Both call the same endpoint with the same request schema. The difference is in the headers you send and which instance you point to.
+The AI backend serves two separate products from two separate deployed instances. Both call the same endpoint with the same request schema. The difference is in the headers you send and which instance you point to.
 
 ---
 
@@ -12,7 +12,7 @@ The RAG backend serves two separate products from two separate deployed instance
 
 ### Overview
 
-Internal tool for Phera's researchers to evaluate RAG response quality. No authentication. No user accounts. Anonymous query logs saved for debugging only.
+Internal tool for Phera's researchers to evaluate AI response quality. No authentication. No user accounts. Anonymous query logs saved for debugging only.
 
 ### Headers
 
@@ -25,7 +25,7 @@ Do not send `X-API-Key` or `X-User-Id` for this product.
 ### Base URL
 
 ```
-TBD - provided after deployment
+https://phera-rag-beta-52458262724.europe-west10.run.app
 ```
 
 ### Endpoint
@@ -114,7 +114,7 @@ Anonymous `QueryLog` row only - pH value, generated query, response, citations, 
 
 ### Overview
 
-User-facing Phera product. Users can be logged in (full persistence) or anonymous (anonymous query log only). The BFF handles all JWT validation - the RAG backend never sees or validates a JWT. The BFF extracts the user ID from the token and passes it directly as a header.
+User-facing Phera product. Users can be logged in (full persistence) or anonymous (anonymous query log only). The BFF handles all JWT validation - the AI backend never sees or validates a JWT. The BFF extracts the user ID from the token and passes it directly as a header.
 
 ### Authentication Flow
 
@@ -127,11 +127,11 @@ BFF validates JWT against Zitadel
 BFF extracts user ID (sub claim)
      |
      v
-BFF calls RAG Backend with:
+BFF calls AI Backend with:
   X-API-Key: <secret>
   X-User-Id: <zitadel_user_id>   <- only if user is logged in
 
-RAG Backend:
+AI Backend:
   -> Validates X-API-Key
   -> Reads X-User-Id (present = logged in, absent = anonymous)
   -> Runs analysis
@@ -168,12 +168,12 @@ Same structure as Project 1.
 
 ### Data Persistence
 
-| Scenario | What RAG saves |
+| Scenario | What AI saves |
 |---|---|
 | `X-User-Id` present (logged in) | QueryLog linked to user + HealthProfile saved/updated |
 | `X-User-Id` absent (anonymous) | Anonymous QueryLog only (`user_id = null`) |
 
-> All persistence is handled internally by the RAG backend. The BFF does not need to manage or track any of this.
+> All persistence is handled internally by the AI backend. The BFF does not need to manage or track any of this.
 
 ---
 
@@ -199,7 +199,7 @@ GET /health/live   - liveness probe
 
 | Instance | DEPLOYMENT_MODE | Swagger Docs | Base URL |
 |---|---|---|---|
-| Beta | `beta` | Enabled | TBD |
+| Beta | `beta` | Disabled (production mode) | https://phera-rag-beta-52458262724.europe-west10.run.app |
 | MVP | `mvp` | Disabled in production | TBD |
 
 ---

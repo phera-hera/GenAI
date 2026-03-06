@@ -106,6 +106,7 @@ Thumbs.db
 *.crt
 service-account*.json
 credentials*.json
+env-vars.yaml
 
 # Terraform
 *.tfstate

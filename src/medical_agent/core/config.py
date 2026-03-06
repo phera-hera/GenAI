@@ -35,6 +35,7 @@ class Settings(BaseSettings):
         default="development"
     )
     debug: bool = Field(default=False)
+    deployment_mode: Literal["beta", "mvp"] = Field(default="beta")
 
     # -------------------------------------------------------------------------
     # Server Settings
@@ -162,6 +163,12 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Check if running in production mode."""
         return self.environment == "production"
+
+    @computed_field
+    @property
+    def is_beta(self) -> bool:
+        """Check if running in beta (personalization test) mode."""
+        return self.deployment_mode == "beta"
 
     def is_azure_openai_configured(self) -> bool:
         """Check if Azure OpenAI LLM is properly configured."""
