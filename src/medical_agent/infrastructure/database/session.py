@@ -26,7 +26,7 @@ def create_engine() -> AsyncEngine:
     appropriate for the current environment.
     """
     return create_async_engine(
-        settings.database_connection_string,
+        settings.sqlalchemy_async_database_url,
         echo=settings.debug,
         pool_pre_ping=True,
         pool_size=5,

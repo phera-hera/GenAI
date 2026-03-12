@@ -88,8 +88,8 @@ async def detailed_health_check() -> DetailedHealthStatus:
     components: dict[str, dict[str, Any]] = {
         "database": {
             "configured": bool(settings.database_connection_string),
-            "host": settings.postgres_host,
-            "port": settings.postgres_port,
+            "host": settings.resolved_postgres_host,
+            "port": settings.resolved_postgres_port,
         },
         "azure_openai": {
             "configured": settings.is_azure_openai_configured(),
@@ -148,7 +148,7 @@ async def _check_database() -> bool:
         from sqlalchemy.ext.asyncio import create_async_engine
         
         engine = create_async_engine(
-            settings.database_connection_string,
+            settings.sqlalchemy_async_database_url,
             echo=False,
         )
         async with engine.begin() as conn:

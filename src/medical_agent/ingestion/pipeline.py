@@ -22,6 +22,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from docling.chunking import HybridChunker
 from llama_index.core.schema import Document
@@ -141,14 +142,41 @@ class MedicalIngestionPipeline:
     ) -> None:
         self.config = config or PipelineConfig()
 
-        # Initialize native PGVectorStore with hybrid search support
+        # Initialize native PGVectorStore with hybrid search support.
+        # Connection strings use @localhost:5432?host= pattern so SQLAlchemy
+        # URL parsing succeeds while the actual socket/host is overridden at
+        # driver level via the ?host= query param (works for both Cloud SQL
+        # Unix sockets and regular TCP hosts).
+        host = settings.resolved_postgres_host
+        port = settings.resolved_postgres_port
+        user = settings.resolved_postgres_user
+        password = settings.resolved_postgres_password
+        db = settings.resolved_postgres_db
+        encoded_password = quote_plus(password)
+
+        if host.startswith("/"):
+            sync_conn_str = (
+                f"postgresql+psycopg2://{user}:{encoded_password}"
+                f"@localhost:5432/{db}?host={host}"
+            )
+            async_conn_str = (
+                f"postgresql+asyncpg://{user}:{encoded_password}"
+                f"@localhost:5432/{db}?host={host}"
+            )
+        else:
+            sync_conn_str = (
+                f"postgresql+psycopg2://{user}:{encoded_password}"
+                f"@{host}:{port}/{db}"
+            )
+            async_conn_str = (
+                f"postgresql+asyncpg://{user}:{encoded_password}"
+                f"@{host}:{port}/{db}"
+            )
+
         # Table name: LlamaIndex prefixes with "data_", so "paper_chunks" → "data_paper_chunks"
         self.vector_store = PGVectorStore.from_params(
-            database=settings.postgres_db,
-            host=settings.postgres_host,
-            password=settings.postgres_password,
-            port=settings.postgres_port,
-            user=settings.postgres_user,
+            connection_string=sync_conn_str,
+            async_connection_string=async_conn_str,
             table_name="paper_chunks",  # Will use data_paper_chunks (LlamaIndex adds "data_" prefix)
             embed_dim=settings.embedding_dimension,
             hybrid_search=True,  # Enable built-in BM25 + vector fusion

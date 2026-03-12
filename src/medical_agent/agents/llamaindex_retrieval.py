@@ -7,6 +7,7 @@ Returns NodeWithScore objects for use in LangGraph workflows.
 
 import logging
 from typing import TYPE_CHECKING
+from urllib.parse import quote_plus
 
 from llama_index.core import VectorStoreIndex
 from llama_index.core.schema import NodeWithScore
@@ -19,6 +20,52 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from llama_index.core.base.base_retriever import BaseRetriever
+
+
+# ============================================================================
+# Connection String Builder
+# ============================================================================
+
+
+def _build_vector_store_connection_strings() -> tuple[str, str]:
+    """
+    Build SQLAlchemy-compatible connection strings for PGVectorStore.
+
+    For Cloud SQL Unix socket paths (host starts with /), uses @localhost:5432
+    as a valid placeholder in the URL so SQLAlchemy can parse it without errors,
+    and passes the actual socket path via ?host= query parameter. Both psycopg2
+    and asyncpg drivers receive this query param and override the localhost value
+    with the socket path, treating it as a Unix domain socket connection.
+
+    For regular TCP connections, uses standard host:port URL format.
+    """
+    host = settings.resolved_postgres_host
+    port = settings.resolved_postgres_port
+    user = settings.resolved_postgres_user
+    password = settings.resolved_postgres_password
+    db = settings.resolved_postgres_db
+    encoded_password = quote_plus(password)
+
+    if host.startswith("/"):
+        sync_url = (
+            f"postgresql+psycopg2://{user}:{encoded_password}"
+            f"@localhost:5432/{db}?host={host}"
+        )
+        async_url = (
+            f"postgresql+asyncpg://{user}:{encoded_password}"
+            f"@localhost:5432/{db}?host={host}"
+        )
+    else:
+        sync_url = (
+            f"postgresql+psycopg2://{user}:{encoded_password}"
+            f"@{host}:{port}/{db}"
+        )
+        async_url = (
+            f"postgresql+asyncpg://{user}:{encoded_password}"
+            f"@{host}:{port}/{db}"
+        )
+
+    return sync_url, async_url
 
 
 # ============================================================================
@@ -68,15 +115,12 @@ def build_retriever(similarity_top_k: int = 5) -> "BaseRetriever":
         api_version=embed_api_version,
     )
 
-    # Build psycopg2-compatible connection string for Cloud SQL socket support
-    connection_string = (
-        settings.database_connection_string
-        .replace("postgresql+asyncpg://", "postgresql+psycopg2://")
-    )
-
-    # Connect to vector store
+    # Connect to vector store using pre-built connection strings that correctly
+    # handle Cloud SQL Unix socket paths via the ?host= query parameter approach.
+    sync_conn_str, async_conn_str = _build_vector_store_connection_strings()
     vector_store = PGVectorStore.from_params(
-        connection_string=connection_string,
+        connection_string=sync_conn_str,
+        async_connection_string=async_conn_str,
         table_name="paper_chunks",
         embed_dim=settings.embedding_dimension,
         hybrid_search=True,

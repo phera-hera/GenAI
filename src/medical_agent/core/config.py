@@ -8,9 +8,11 @@ All settings can be overridden via environment variables or .env file.
 from functools import lru_cache
 from pathlib import Path
 from typing import ClassVar, Literal
+from urllib.parse import parse_qs, unquote, urlparse
 
 from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 # Project root: src/medical_agent/core/config.py → 3 levels up
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -54,6 +56,100 @@ class Settings(BaseSettings):
     
     # Direct database URL (overrides individual postgres settings if set)
     database_url: str | None = Field(default=None)
+
+    @property
+    def _parsed_database_url(self):
+        """Parse DATABASE_URL once so callers can safely reuse its parts."""
+        if not self.database_url:
+            return None
+        return urlparse(self.database_url)
+
+    @property
+    def _database_query_params(self) -> dict[str, str]:
+        """Expose DATABASE_URL query params like Cloud SQL socket host."""
+        parsed = self._parsed_database_url
+        if not parsed:
+            return {}
+        return {
+            key: values[-1]
+            for key, values in parse_qs(parsed.query, keep_blank_values=True).items()
+        }
+
+    @property
+    def resolved_postgres_user(self) -> str:
+        """Database user from DATABASE_URL or POSTGRES_USER fallback."""
+        parsed = self._parsed_database_url
+        if parsed and parsed.username:
+            return unquote(parsed.username)
+        return self.postgres_user
+
+    @property
+    def resolved_postgres_password(self) -> str:
+        """Database password from DATABASE_URL or POSTGRES_PASSWORD fallback."""
+        parsed = self._parsed_database_url
+        if parsed and parsed.password:
+            return unquote(parsed.password)
+        return self.postgres_password
+
+    @property
+    def resolved_postgres_db(self) -> str:
+        """Database name from DATABASE_URL or POSTGRES_DB fallback."""
+        parsed = self._parsed_database_url
+        if parsed and parsed.path:
+            return parsed.path.lstrip("/") or self.postgres_db
+        return self.postgres_db
+
+    @property
+    def resolved_postgres_host(self) -> str:
+        """Database host from DATABASE_URL, including Cloud SQL socket paths."""
+        parsed = self._parsed_database_url
+        if parsed:
+            query_host = self._database_query_params.get("host")
+            if query_host:
+                return query_host
+            if parsed.hostname:
+                return parsed.hostname
+        return self.postgres_host
+
+    @property
+    def resolved_postgres_port(self) -> int:
+        """Database port from DATABASE_URL or POSTGRES_PORT fallback."""
+        parsed = self._parsed_database_url
+        if parsed and parsed.port is not None:
+            return parsed.port
+        return self.postgres_port
+
+    @property
+    def sqlalchemy_async_database_url(self) -> str | URL:
+        """Engine-ready async SQLAlchemy URL that preserves socket query params."""
+        parsed = self._parsed_database_url
+        if not parsed:
+            return self.database_connection_string
+        return URL.create(
+            drivername=parsed.scheme,
+            username=self.resolved_postgres_user,
+            password=self.resolved_postgres_password,
+            host=parsed.hostname,
+            port=parsed.port,
+            database=self.resolved_postgres_db,
+            query=self._database_query_params,
+        )
+
+    @property
+    def sqlalchemy_sync_database_url(self) -> str | URL:
+        """Engine-ready sync SQLAlchemy URL that preserves socket query params."""
+        parsed = self._parsed_database_url
+        if not parsed:
+            return self.sync_database_connection_string
+        return URL.create(
+            drivername=parsed.scheme.replace("+asyncpg", ""),
+            username=self.resolved_postgres_user,
+            password=self.resolved_postgres_password,
+            host=parsed.hostname,
+            port=parsed.port,
+            database=self.resolved_postgres_db,
+            query=self._database_query_params,
+        )
     
     @computed_field
     @property
@@ -71,7 +167,10 @@ class Settings(BaseSettings):
     def sync_database_connection_string(self) -> str:
         """Get synchronous database connection string for Alembic."""
         if self.database_url:
-            return self.database_url.replace("postgresql+asyncpg", "postgresql")
+            sqlalchemy_url = self.sqlalchemy_sync_database_url
+            if isinstance(sqlalchemy_url, URL):
+                return sqlalchemy_url.render_as_string(hide_password=False)
+            return sqlalchemy_url
         return (
             f"postgresql://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
